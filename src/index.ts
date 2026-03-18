@@ -102,7 +102,7 @@ async function main() {
     const { isServerRunning } = await import('./server/detect-running.ts');
     const { cleanServerTemp } = await import('./server/clean-temp.ts');
     const { startServer } = await import('./server/start-server.ts');
-    const { buildProject } = await import('./core/build-project.ts');
+    const { buildProject, isGradleProject } = await import('./core/build-project.ts');
     const { findArtifacts } = await import('./core/find-artifact.ts');
     const { deployArtifact } = await import('./core/deploy-artifact.ts');
     const { tasks } = await import('@clack/prompts');
@@ -138,16 +138,26 @@ async function main() {
     }
 
     if (action === 'build-deploy') {
-      await tasks([
-        {
-          title: 'Building project (gradle clean build)',
-          task: async () => {
-            const success = await buildProject();
-            if (!success) throw new Error('Build failed');
-            return 'Build successful';
+      if (!isGradleProject()) {
+        log.error('Not a Gradle project', 'This project does not contain build.gradle or build.gradle.kts at the root.');
+        continue;
+      }
+
+      try {
+        await tasks([
+          {
+            title: 'Building project (gradle clean build)',
+            task: async () => {
+              const success = await buildProject();
+              if (!success) throw new Error('Build failed');
+              return 'Build successful';
+            }
           }
-        }
-      ]);
+        ]);
+      } catch (error: any) {
+        log.error('Action failed', error.message);
+        continue;
+      }
     }
 
     const artifacts = await findArtifacts();
@@ -160,23 +170,27 @@ async function main() {
     const artifact = await selectArtifact(artifacts);
 
     let deploySuccess = false;
-    await tasks([
-      {
-        title: `Deploying ${artifact.name}`,
-        task: async (message) => {
-          if (!isRunning) {
-            message('Cleaning temporary directories (data, log, tmp)');
-            await cleanServerTemp(server.home);
+    try {
+      await tasks([
+        {
+          title: `Deploying ${artifact.name}`,
+          task: async (message) => {
+            if (!isRunning) {
+              message('Cleaning temporary directories (data, log, tmp)');
+              await cleanServerTemp(server.home);
+            }
+            
+            message(`Transferring ${artifact.name} to deployments/`);
+            deploySuccess = await deployArtifact(artifact, server.home);
+            
+            if (!deploySuccess) throw new Error('Deployment failed (.failed marker or timeout)');
+            return 'Deployment validated (.deployed detected)';
           }
-          
-          message(`Transferring ${artifact.name} to deployments/`);
-          deploySuccess = await deployArtifact(artifact, server.home);
-          
-          if (!deploySuccess) throw new Error('Deployment failed (.failed marker or timeout)');
-          return 'Deployment validated (.deployed detected)';
         }
-      }
-    ]);
+      ]);
+    } catch (error: any) {
+      log.error('Deployment failed', error.message);
+    }
     
     if (deploySuccess) {
       log.success('Deployment completed successfully!');
