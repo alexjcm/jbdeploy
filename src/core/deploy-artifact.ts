@@ -1,7 +1,7 @@
 import { join, basename, extname } from 'path';
 import { readdirSync, rmSync, existsSync } from 'fs';
 import { Artifact } from './find-artifact.ts';
-import { SERVER_PATHS } from '../constants.ts';
+import { SERVER_PATHS, DEPLOYMENT_MARKERS } from '../constants.ts';
 
 export async function deployArtifact(artifact: Artifact, serverHome: string): Promise<boolean> {
   const deploymentsDir = join(serverHome, ...SERVER_PATHS.DEPLOYMENTS);
@@ -26,18 +26,18 @@ export async function deployArtifact(artifact: Artifact, serverHome: string): Pr
         if (isPreviousVersion) {
           const fullPath = join(deploymentsDir, file);
           rmSync(fullPath, { force: true });
-          rmSync(`${fullPath}.deployed`, { force: true });
-          rmSync(`${fullPath}.failed`, { force: true });
-          rmSync(`${fullPath}.isdeploying`, { force: true });
-          rmSync(`${fullPath}.skipdeploy`, { force: true });
-          rmSync(`${fullPath}.pending`, { force: true });
+          rmSync(`${fullPath}${DEPLOYMENT_MARKERS.DEPLOYED}`,    { force: true });
+          rmSync(`${fullPath}${DEPLOYMENT_MARKERS.FAILED}`,      { force: true });
+          rmSync(`${fullPath}${DEPLOYMENT_MARKERS.ISDEPLOYING}`, { force: true });
+          rmSync(`${fullPath}${DEPLOYMENT_MARKERS.SKIPDEPLOY}`,  { force: true });
+          rmSync(`${fullPath}${DEPLOYMENT_MARKERS.PENDING}`,     { force: true });
         }
       }
     }
 
     const file = Bun.file(artifact.path);
     await Bun.write(destPath, file);
-    await Bun.write(`${destPath}.dodeploy`, '');
+    await Bun.write(`${destPath}${DEPLOYMENT_MARKERS.DODEPLOY}`, '');
     
     return true;
   } catch (error) {

@@ -1,6 +1,6 @@
 import { readdirSync, existsSync } from 'fs';
 import { join } from 'path';
-import { SERVER_PATHS } from '../constants.ts';
+import { SERVER_PATHS, DEPLOYMENT_MARKERS, ARTIFACT_EXTENSIONS } from '../constants.ts';
 
 export interface DeploymentStatus {
   name: string;
@@ -12,14 +12,14 @@ export function listDeployments(serverHome: string): DeploymentStatus[] {
   if (!existsSync(deploymentsDir)) return [];
 
   const files = readdirSync(deploymentsDir);
-  const artifacts = files.filter(f => f.endsWith('.war') || f.endsWith('.ear'));
+  const artifacts = files.filter(f => ARTIFACT_EXTENSIONS.some(ext => f.endsWith(ext)));
   
   return artifacts.map(name => {
     let status = '🕐 pending';
-    if (files.includes(`${name}.deployed`)) status = '✔ deployed';
-    if (files.includes(`${name}.failed`)) status = '✖ failed';
-    if (files.includes(`${name}.isdeploying`)) status = '⏳ deploying';
-    if (files.includes(`${name}.pending`)) status = '🕐 pending';
+    if (files.includes(`${name}${DEPLOYMENT_MARKERS.DEPLOYED}`))    status = '✔ deployed';
+    if (files.includes(`${name}${DEPLOYMENT_MARKERS.FAILED}`))      status = '✖ failed';
+    if (files.includes(`${name}${DEPLOYMENT_MARKERS.ISDEPLOYING}`)) status = '⏳ deploying';
+    if (files.includes(`${name}${DEPLOYMENT_MARKERS.PENDING}`))     status = '🕐 pending';
     
     return { name, status };
   });

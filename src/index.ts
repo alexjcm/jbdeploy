@@ -85,7 +85,6 @@ async function main() {
       server = await addNewServerFlow(config);
     } else {
       server = selection;
-      // Update last used server
       if (config.lastServer !== server.name) {
         config.lastServer = server.name;
         const { saveConfig } = await import('./config/config-manager.ts');
@@ -102,7 +101,7 @@ async function main() {
     const { isServerRunning } = await import('./server/detect-running.ts');
     const { cleanServerTemp } = await import('./server/clean-temp.ts');
     const { startServer } = await import('./server/start-server.ts');
-    const { buildProject, isGradleProject } = await import('./core/build-project.ts');
+    const { buildProject, detectBuildTool } = await import('./core/build-project.ts');
     const { findArtifacts } = await import('./core/find-artifact.ts');
     const { deployArtifact } = await import('./core/deploy-artifact.ts');
     const { tasks } = await import('@clack/prompts');
@@ -117,18 +116,17 @@ async function main() {
         process.exit(EXIT_CODES.SUCCESS);
       }
 
-      const { mode, port } = await selectServerMode(server.lastDebugPort);
+      const { mode, port } = await selectServerMode(server.lastDebugPort, server.lastServerMode);
 
       log.step('Server stopped — cleaning temporary directories (data, log, tmp)');
       await cleanServerTemp(server.home);
 
       log.step(`Starting server in ${mode} mode${mode === 'debug' ? ` (port ${port})` : ''}...`);
       try {
-        if (mode === 'debug' && port) {
-          server.lastDebugPort = port;
-          const { saveConfig } = await import('./config/config-manager.ts');
-          await saveConfig(config);
-        }
+        server.lastServerMode = mode;
+        if (mode === 'debug' && port) server.lastDebugPort = port;
+        const { saveConfig } = await import('./config/config-manager.ts');
+        await saveConfig(config);
         await startServer(server.home, mode === 'debug', port);
         log.success('Server process finished.');
       } catch (error: any) {
@@ -138,17 +136,22 @@ async function main() {
     }
 
     if (action === 'build-deploy') {
-      if (!isGradleProject()) {
-        log.error('Not a Gradle project', 'This project does not contain build.gradle or build.gradle.kts at the root.');
+      const buildTool = detectBuildTool();
+      if (!buildTool) {
+        log.error('No build tool detected', 'This project does not contain build.gradle, build.gradle.kts or pom.xml at the root.');
         continue;
       }
+
+      const buildLabel = buildTool === 'gradle'
+        ? 'Building project (gradle clean build)'
+        : 'Building project (mvn clean package)';
 
       try {
         await tasks([
           {
-            title: 'Building project (gradle clean build)',
+            title: buildLabel,
             task: async () => {
-              const success = await buildProject();
+              const success = await buildProject(buildTool);
               if (!success) throw new Error('Build failed');
               return 'Build successful';
             }
@@ -196,14 +199,13 @@ async function main() {
       log.success('Deployment completed successfully!');
       
       if (!isRunning) {
-        const { mode, port } = await selectServerMode(server.lastDebugPort);
+        const { mode, port } = await selectServerMode(server.lastDebugPort, server.lastServerMode);
         log.step(`Starting server in ${mode} mode${mode === 'debug' ? ` (port ${port})` : ''}...`);
         try {
-          if (mode === 'debug' && port) {
-            server.lastDebugPort = port;
-            const { saveConfig } = await import('./config/config-manager.ts');
-            await saveConfig(config);
-          }
+          server.lastServerMode = mode;
+          if (mode === 'debug' && port) server.lastDebugPort = port;
+          const { saveConfig } = await import('./config/config-manager.ts');
+          await saveConfig(config);
           await startServer(server.home, mode === 'debug', port);
           log.success('Server process finished.');
         } catch (error: any) {

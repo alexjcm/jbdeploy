@@ -1,6 +1,7 @@
 import { Glob } from 'bun';
 import { statSync } from 'fs';
 import { basename } from 'path';
+import { ARTIFACT_EXTENSIONS } from '../constants.ts';
 
 export interface Artifact {
   path: string;
@@ -9,12 +10,14 @@ export interface Artifact {
 }
 
 export async function findArtifacts(): Promise<Artifact[]> {
-  const patterns = [
-    'build/libs/*.war',
-    'build/libs/*.ear',
-    '*/build/libs/*.war',
-    '*/build/libs/*.ear',
-  ];
+  const patterns = ARTIFACT_EXTENSIONS.flatMap(ext => [
+    // Gradle
+    `build/libs/*${ext}`,
+    `*/build/libs/*${ext}`,
+    // Maven (remove these two lines to drop Maven artifact scanning)
+    `target/*${ext}`,
+    `*/target/*${ext}`,
+  ]);
 
   const artifacts: Artifact[] = [];
   
@@ -30,7 +33,6 @@ export async function findArtifacts(): Promise<Artifact[]> {
     }
   }
 
-  // Remove duplicates by path (just in case patterns overlap)
   const uniqueArtifacts = Array.from(new Map(artifacts.map(a => [a.path, a])).values());
   
   return uniqueArtifacts;

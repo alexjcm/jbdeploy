@@ -2,6 +2,7 @@ import { group, text, select, isCancel, cancel, note } from '@clack/prompts';
 import { Config, AppServer } from '../servers.ts';
 import { saveConfig, validateServerHome, normalizePath } from '../config/config-manager.ts';
 import { Artifact, formatBytes } from '../core/find-artifact.ts';
+import { EXIT_CODES, DEFAULT_DEBUG_PORT } from '../constants.ts';
 
 export async function firstRunFlow(): Promise<Config> {
   const server = await addNewServerFlow({ servers: [] });
@@ -34,7 +35,7 @@ export async function addNewServerFlow(existingConfig: Config): Promise<AppServe
     {
       onCancel: () => {
         cancel('Operation cancelled');
-        process.exit(130);
+        process.exit(EXIT_CODES.INTERRUPTED);
       },
     }
   );
@@ -79,7 +80,7 @@ export async function selectServer(config: Config): Promise<AppServer | 'ADD_NEW
 
   if (isCancel(selected)) {
     cancel('Operation cancelled');
-    process.exit(130);
+    process.exit(EXIT_CODES.INTERRUPTED);
   }
 
   return selected as AppServer | 'ADD_NEW';
@@ -92,9 +93,10 @@ export async function selectArtifact(artifacts: Artifact[]): Promise<Artifact> {
     return artifact;
   }
 
+  const sorted = [...artifacts].sort((a, b) => b.size - a.size);
   const selected = await select({
     message: 'Multiple artifacts found. Select one:',
-    options: artifacts.map(a => ({
+    options: sorted.map(a => ({
       value: a,
       label: `${a.name} (${formatBytes(a.size)})`,
     })),
@@ -102,7 +104,7 @@ export async function selectArtifact(artifacts: Artifact[]): Promise<Artifact> {
 
   if (isCancel(selected)) {
     cancel('Operation cancelled');
-    process.exit(130);
+    process.exit(EXIT_CODES.INTERRUPTED);
   }
 
   return selected as Artifact;
@@ -112,25 +114,25 @@ export async function selectAction(): Promise<'build-deploy' | 'deploy-only' | '
   const action = await select({
     message: 'Select action:',
     options: [
-      { value: 'build-deploy', label: 'build + deploy' },
-      { value: 'deploy-only', label: 'deploy only' },
+      { value: 'build-deploy', label: 'build + copy + deploy' },
+      { value: 'deploy-only', label: 'copy + deploy' },
       { value: 'start-only', label: 'start server only' },
     ],
   });
 
   if (isCancel(action)) {
     cancel('Operation cancelled');
-    process.exit(130);
+    process.exit(EXIT_CODES.INTERRUPTED);
   }
 
   return action as 'build-deploy' | 'deploy-only' | 'start-only';
 }
 
-export async function selectServerMode(lastUsedPort?: number): Promise<{ mode: 'normal' | 'debug'; port?: number }> {
-  const defaultPort = lastUsedPort || 5005;
+export async function selectServerMode(lastUsedPort?: number, lastServerMode?: 'normal' | 'debug'): Promise<{ mode: 'normal' | 'debug'; port?: number }> {
+  const defaultPort = lastUsedPort || DEFAULT_DEBUG_PORT;
   const debugLabel = lastUsedPort 
     ? `🐞 Debug mode (Port: ${lastUsedPort})` 
-    : '🐞 Debug mode (Default port: 5005)';
+    : `🐞 Debug mode (Default port: ${DEFAULT_DEBUG_PORT})`;
 
   const result = await group(
     {
@@ -141,6 +143,7 @@ export async function selectServerMode(lastUsedPort?: number): Promise<{ mode: '
           { value: 'debug', label: debugLabel },
           { value: 'debug-custom', label: '🐞 Debug mode (Custom port...)' },
         ],
+        initialValue: lastServerMode ?? 'normal',
       }),
       port: ({ results }) => 
         results.mode === 'debug-custom' 
@@ -157,7 +160,7 @@ export async function selectServerMode(lastUsedPort?: number): Promise<{ mode: '
     {
       onCancel: () => {
         cancel('Operation cancelled');
-        process.exit(130);
+        process.exit(EXIT_CODES.INTERRUPTED);
       },
     }
   );
