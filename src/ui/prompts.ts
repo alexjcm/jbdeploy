@@ -31,6 +31,14 @@ export async function addNewServerFlow(existingConfig: Config): Promise<AppServe
           if (!validateServerHome(value)) return 'This path does not look like a valid Server Home (missing standalone/deployments)';
         },
       }),
+      profile: () => select({
+        message: 'Select the JVM memory profile for this server (affects -Xms and -Xmx):',
+        options: [
+          { value: 'recommended', label: '[ Recommended ] 2GB initial - 5GB max (Default)' },
+          { value: 'minimal', label: '[ Minimal     ] 1GB initial - 2GB max' },
+        ],
+        initialValue: 'recommended',
+      }),
     },
     {
       onCancel: () => {
@@ -41,8 +49,9 @@ export async function addNewServerFlow(existingConfig: Config): Promise<AppServe
   );
 
   const newServer: AppServer = {
-    name: result.name as string,
-    home: normalizePath(result.home as string),
+    name: result.name,
+    home: normalizePath(result.home),
+    memoryProfile: result.profile as 'minimal' | 'recommended',
   };
 
   const newConfig: Config = {
@@ -52,7 +61,7 @@ export async function addNewServerFlow(existingConfig: Config): Promise<AppServe
   };
 
   await saveConfig(newConfig);
-  note('Server saved successfully.');
+  note('Server saved successfully. You can review or modify this configuration directly at: ~/.jdeploy-cli/config.json');
   
   return newServer;
 }
@@ -83,7 +92,7 @@ export async function selectServer(config: Config): Promise<AppServer | 'ADD_NEW
     process.exit(EXIT_CODES.INTERRUPTED);
   }
 
-  return selected as AppServer | 'ADD_NEW';
+  return selected!;
 }
 
 export async function selectArtifact(artifacts: Artifact[]): Promise<Artifact> {
@@ -107,7 +116,7 @@ export async function selectArtifact(artifacts: Artifact[]): Promise<Artifact> {
     process.exit(EXIT_CODES.INTERRUPTED);
   }
 
-  return selected as Artifact;
+  return selected;
 }
 
 export async function selectAction(): Promise<'build-deploy' | 'deploy-only' | 'start-only'> {
@@ -125,7 +134,7 @@ export async function selectAction(): Promise<'build-deploy' | 'deploy-only' | '
     process.exit(EXIT_CODES.INTERRUPTED);
   }
 
-  return action as 'build-deploy' | 'deploy-only' | 'start-only';
+  return action;
 }
 
 export async function selectServerMode(lastUsedPort?: number, lastServerMode?: 'normal' | 'debug'): Promise<{ mode: 'normal' | 'debug'; port?: number }> {
@@ -169,7 +178,7 @@ export async function selectServerMode(lastUsedPort?: number, lastServerMode?: '
   const finalPort = result.mode === 'debug' ? defaultPort : (result.port ? Number(result.port) : undefined);
 
   return { 
-    mode: finalMode as 'normal' | 'debug', 
+    mode: finalMode, 
     ...(finalPort ? { port: finalPort } : {})
   };
 }

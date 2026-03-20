@@ -1,9 +1,8 @@
 import { spawn } from 'bun';
+import { System } from '../core/system.ts';
 
 export async function isServerRunning(): Promise<boolean> {
-  const platform = process.platform;
-  
-  if (platform === 'win32') {
+  if (System.isWindows) {
     const proc = spawn(['tasklist'], { stdout: 'pipe' });
     const output = await new Response(proc.stdout).text();
     const lc = output.toLowerCase();

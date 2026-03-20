@@ -3,7 +3,7 @@ import { readdirSync, rmSync, existsSync } from 'fs';
 import { Artifact } from './find-artifact.ts';
 import { SERVER_PATHS, DEPLOYMENT_MARKERS } from '../constants.ts';
 
-export async function deployArtifact(artifact: Artifact, serverHome: string): Promise<boolean> {
+export async function deployArtifact(artifact: Artifact, serverHome: string, isRunning = true): Promise<boolean> {
   const deploymentsDir = join(serverHome, ...SERVER_PATHS.DEPLOYMENTS);
   const destPath = join(deploymentsDir, artifact.name);
 
@@ -13,7 +13,7 @@ export async function deployArtifact(artifact: Artifact, serverHome: string): Pr
     const baseWithoutExt = basename(artifact.name, ext);
     
     // Pattern: everything before the first hyphen followed by a digit
-    const versionMatch = baseWithoutExt.match(/^(.+?)-\d/);
+    const versionMatch = /^(.+?)-\d/.exec(baseWithoutExt);
     const prefix = versionMatch ? versionMatch[1] : baseWithoutExt;
 
     if (existsSync(deploymentsDir)) {
@@ -35,12 +35,38 @@ export async function deployArtifact(artifact: Artifact, serverHome: string): Pr
       }
     }
 
+    // Clean up existing markers for the exact same artifact version if it was previously deployed
+    rmSync(`${destPath}${DEPLOYMENT_MARKERS.DEPLOYED}`,    { force: true });
+    rmSync(`${destPath}${DEPLOYMENT_MARKERS.FAILED}`,      { force: true });
+    rmSync(`${destPath}${DEPLOYMENT_MARKERS.ISDEPLOYING}`, { force: true });
+    rmSync(`${destPath}${DEPLOYMENT_MARKERS.SKIPDEPLOY}`,  { force: true });
+    rmSync(`${destPath}${DEPLOYMENT_MARKERS.PENDING}`,     { force: true });
+
     const file = Bun.file(artifact.path);
     await Bun.write(destPath, file);
+    
+    // The JBoss/Wildfly server will delete this .dodeploy marker and create either .deployed or .failed
     await Bun.write(`${destPath}${DEPLOYMENT_MARKERS.DODEPLOY}`, '');
     
-    return true;
-  } catch (error) {
+    // If the server is offline, skip polling since JBoss isn't there to process the marker yet
+    if (!isRunning) return true;
+    
+    const deployedMarker = `${destPath}${DEPLOYMENT_MARKERS.DEPLOYED}`;
+    const failedMarker = `${destPath}${DEPLOYMENT_MARKERS.FAILED}`;
+    
+    let attempts = 0;
+    const maxAttempts = 120; // 120 seconds timeout
+    
+    while (attempts < maxAttempts) {
+      if (existsSync(deployedMarker)) return true;
+      if (existsSync(failedMarker)) return false;
+      
+      await Bun.sleep(1000);
+      attempts++;
+    }
+    
+    return false; // Timeout
+  } catch {
     return false;
   }
 }

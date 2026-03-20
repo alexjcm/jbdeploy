@@ -31,7 +31,7 @@ async function main() {
     process.exit(EXIT_CODES.USAGE_ERROR);
   }
 
-  const config = getConfig();
+  let config = getConfig();
   const args = process.argv.slice(2);
 
   if (args.includes('--help') || args.includes('-h')) {
@@ -42,6 +42,10 @@ async function main() {
     --list    List currently deployed artifacts on the server
     --clean   Clean error markers (.failed, .pending) on the server
     --help, -h Show this help message
+
+  ${log.info('Configuration:')}
+    • Stored locally at ~/.jdeploy-cli/config.json
+    • Contains server paths, debug ports, and JVM memory profiles.
 
   ${log.info('Features:')}
     • Semantic logging and persistent interactive UI.
@@ -77,12 +81,14 @@ async function main() {
   let server;
 
   if (config.servers.length === 0) {
-    const newConfig = await firstRunFlow();
-    server = newConfig.servers[0]!;
+    config = await firstRunFlow();
+    server = config.servers[0]!;
   } else {
     const selection = await selectServer(config);
     if (selection === 'ADD_NEW') {
       server = await addNewServerFlow(config);
+      const { getConfig } = await import('./config/config-manager.ts');
+      config = getConfig(); // Refresh memory config to include the newly added server
     } else {
       server = selection;
       if (config.lastServer !== server.name) {
@@ -127,10 +133,10 @@ async function main() {
         if (mode === 'debug' && port) server.lastDebugPort = port;
         const { saveConfig } = await import('./config/config-manager.ts');
         await saveConfig(config);
-        await startServer(server.home, mode === 'debug', port);
+        await startServer(server.home, mode === 'debug', port, server.memoryProfile);
         log.success('Server process finished.');
-      } catch (error: any) {
-        log.error('Failed to start server', error.message);
+      } catch (error) {
+        log.error('Failed to start server', error instanceof Error ? error.message : String(error));
       }
       continue;
     }
@@ -157,8 +163,10 @@ async function main() {
             }
           }
         ]);
-      } catch (error: any) {
-        log.error('Action failed', error.message);
+        const { notifySuccess } = await import('./utils/notify.ts');
+        notifySuccess('Build completed successfully!', '🛠️ Build Successful');
+      } catch (error) {
+        log.error('Action failed', error instanceof Error ? error.message : String(error));
         continue;
       }
     }
@@ -183,21 +191,22 @@ async function main() {
               await cleanServerTemp(server.home);
             }
             
-            message(`Transferring ${artifact.name} to deployments/`);
-            deploySuccess = await deployArtifact(artifact, server.home);
+            const { join } = await import('path');
+            const { SERVER_PATHS } = await import('./constants.ts');
+            const destPath = join(server.home, ...SERVER_PATHS.DEPLOYMENTS);
+            message(`Transferring ${artifact.name} to ${destPath}`);
+            deploySuccess = await deployArtifact(artifact, server.home, isRunning);
             
             if (!deploySuccess) throw new Error('Deployment failed (.failed marker or timeout)');
-            return 'Deployment validated (.deployed detected)';
+            return isRunning ? 'Deployment validated (.deployed detected)' : 'Artifact transferred successfully (ready for boot)';
           }
         }
       ]);
-    } catch (error: any) {
-      log.error('Deployment failed', error.message);
+    } catch (error) {
+      log.error('Deployment failed', error instanceof Error ? error.message : String(error));
     }
     
     if (deploySuccess) {
-      log.success('Deployment completed successfully!');
-      
       if (!isRunning) {
         const { mode, port } = await selectServerMode(server.lastDebugPort, server.lastServerMode);
         log.step(`Starting server in ${mode} mode${mode === 'debug' ? ` (port ${port})` : ''}...`);
@@ -206,10 +215,10 @@ async function main() {
           if (mode === 'debug' && port) server.lastDebugPort = port;
           const { saveConfig } = await import('./config/config-manager.ts');
           await saveConfig(config);
-          await startServer(server.home, mode === 'debug', port);
+          await startServer(server.home, mode === 'debug', port, server.memoryProfile);
           log.success('Server process finished.');
-        } catch (error: any) {
-          log.error('Failed to start server', error.message);
+        } catch (error) {
+          log.error('Failed to start server', error instanceof Error ? error.message : String(error));
         }
       }
     }

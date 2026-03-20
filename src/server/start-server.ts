@@ -1,16 +1,29 @@
 import { spawn } from 'bun';
 import { join } from 'path';
-import { existsSync, statSync } from 'fs';
+import { existsSync, statSync, chmodSync } from 'fs';
 import { DEFAULT_DEBUG_PORT, SERVER_SCRIPT } from '../constants.ts';
+import { System } from '../core/system.ts';
 
-const BASE_OPTS = '-server -Xms2048m -Xmx5120m -XX:MetaspaceSize=512m -XX:MaxMetaspaceSize=2048m ' +
-  '-Djava.net.preferIPv4Stack=true -Djboss.modules.system.pkgs=org.jboss.byteman ' +
-  '-Djava.awt.headless=true -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+ParallelRefProcEnabled';
+function getMemoryArgs(profile?: 'minimal' | 'recommended'): string {
+  if (profile === 'minimal') {
+    return '-Xms1024m -Xmx2048m';
+  }
+  return '-Xms2048m -Xmx5120m'; // Default to recommended
+}
 
 const getDebugOpts = (port: number) => `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=${port}`;
 
-export async function startServer(serverHome: string, debug: boolean = false, debugPort: number = DEFAULT_DEBUG_PORT): Promise<void> {
-  const isWin = process.platform === 'win32';
+export async function startServer(
+  serverHome: string, 
+  debug = false, 
+  debugPort: number = DEFAULT_DEBUG_PORT,
+  memoryProfile?: 'minimal' | 'recommended'
+): Promise<void> {
+  const memOpts = getMemoryArgs(memoryProfile);
+  const BASE_OPTS = `-server ${memOpts} -XX:MetaspaceSize=512m -XX:MaxMetaspaceSize=2048m ` +
+    '-Djava.net.preferIPv4Stack=true -Djboss.modules.system.pkgs=org.jboss.byteman ' +
+    '-Djava.awt.headless=true -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+ParallelRefProcEnabled';
+  const isWin = System.isWindows;
   const binDir = join(serverHome, SERVER_SCRIPT.BIN_DIR);
   const scriptName = isWin ? SERVER_SCRIPT.WIN : SERVER_SCRIPT.UNIX;
   const scriptPath = join(binDir, scriptName);
@@ -24,7 +37,11 @@ export async function startServer(serverHome: string, debug: boolean = false, de
     const stats = statSync(scriptPath);
     const isExecutable = (stats.mode & 0o111) !== 0; // Check if any execute bit is set
     if (!isExecutable) {
-      throw new Error(`Script does not have execution permissions. Run:\nchmod +x ${scriptPath}`);
+      try {
+        chmodSync(scriptPath, 0o755); // Auto-fix permissions
+      } catch (e) {
+        throw new Error(`Script does not have execution permissions and auto-fix failed. Run:\nchmod +x ${scriptPath}`, { cause: e });
+      }
     }
   }
 

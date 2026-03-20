@@ -3,6 +3,7 @@ export interface AppServer {
   home: string;
   lastDebugPort?: number;
   lastServerMode?: 'normal' | 'debug';
+  memoryProfile?: 'minimal' | 'recommended';
 }
 
 export interface Config {

@@ -1,14 +1,48 @@
 import { spawn } from 'bun';
-import { existsSync } from 'fs';
+import { existsSync, chmodSync } from 'fs';
+import { System } from './system.ts';
 
 export type BuildTool = 'gradle' | 'maven';
+
+/**
+ * Gets the correct executable for a build tool (supports wrappers and Windows).
+ * Tries to assign execution permissions on Unix before returning the wrapper.
+ */
+function getTargetCommand(tool: BuildTool): string {
+  const isWindows = System.isWindows;
+  
+  if (tool === 'gradle') {
+    const wrapper = isWindows ? 'gradlew.bat' : './gradlew';
+    if (existsSync(wrapper)) {
+      if (!isWindows) {
+        try { chmodSync(wrapper, 0o755); } catch { /* ignore */ } // Auto-fix execution permissions
+      }
+      return wrapper;
+    }
+    return 'gradle';
+  }
+
+  if (tool === 'maven') {
+    const wrapper = isWindows ? 'mvnw.cmd' : './mvnw';
+    if (existsSync(wrapper)) {
+      if (!isWindows) {
+        try { chmodSync(wrapper, 0o755); } catch { /* ignore */ } // Auto-fix execution permissions
+      }
+      return wrapper;
+    }
+    return 'mvn';
+  }
+  
+  return tool;
+}
 
 export function isGradleProject(): boolean {
   return existsSync('build.gradle') || existsSync('build.gradle.kts');
 }
 
 async function buildGradle(): Promise<boolean> {
-  const proc = spawn(['gradle', 'clean', 'build', '-x', 'test', '-x', 'pmdMain'], {
+  const cmd = getTargetCommand('gradle');
+  const proc = spawn([cmd, 'clean', 'build', '-x', 'test', '-x', 'pmdMain'], {
     stdout: 'inherit',
     stderr: 'inherit',
   });
@@ -20,8 +54,8 @@ export function isMavenProject(): boolean {
 }
 
 async function buildMaven(): Promise<boolean> {
-  const mvn = existsSync('./mvnw') ? './mvnw' : 'mvn';
-  const proc = spawn([mvn, 'clean', 'package', '-DskipTests'], {
+  const cmd = getTargetCommand('maven');
+  const proc = spawn([cmd, 'clean', 'package', '-DskipTests'], {
     stdout: 'inherit',
     stderr: 'inherit',
   });

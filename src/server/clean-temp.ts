@@ -13,7 +13,7 @@ export async function cleanServerTemp(serverHome: string): Promise<void> {
     if (existsSync(dir)) {
       try {
         rmSync(dir, { recursive: true, force: true });
-      } catch (error) {
+      } catch {
         console.warn(`Could not clean directory: ${dir}. It might be locked.`);
       }
     }
