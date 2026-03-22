@@ -61,7 +61,7 @@ export async function addNewServerFlow(existingConfig: Config): Promise<AppServe
   };
 
   await saveConfig(newConfig);
-  note('Server saved successfully. You can review or modify this configuration directly at: ~/.jdeploy-cli/config.json');
+  note('Server saved successfully. You can review or modify this configuration directly at: ~/.jdeploy/config.json');
   
   return newServer;
 }

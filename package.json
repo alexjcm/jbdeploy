@@ -1,5 +1,5 @@
 {
-  "name": "jdeploy-cli",
+  "name": "jdeploy",
   "module": "index.ts",
   "type": "module",
   "version": "1.0.0",
@@ -9,7 +9,7 @@
   "keywords": ["jboss", "wildfly", "deploy", "cli", "automation", "java", "maven", "gradle"],
   "files": ["dist", "README.md", "LICENSE", "package.json"],
   "bin": {
-    "jdeploy-cli": "./src/index.ts"
+    "jdeploy": "./src/index.ts"
   },
   "scripts": {
     "start": "bun run src/index.ts",

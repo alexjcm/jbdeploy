@@ -8,7 +8,7 @@
 CLI tool to deploy EAR/WAR artifacts to **JBoss** or **Wildfly**.
 
 <p align="center">
-  <img src="demo.gif" alt="jdeploy-cli demo" width="800"/>
+  <img src="demo.gif" alt="jdeploy demo" width="800"/>
 </p>
 
 ## Features
@@ -46,7 +46,7 @@ bun install
 ```bash
 bun run local:link
 ```
-Now you can use `jdeploy-cli` from any terminal. It executes the source code via Bun, making your changes **immediately active**.
+Now you can use `jdeploy` from any terminal. It executes the source code via Bun, making your changes **immediately active**.
 
 ## 🏗️ Build Pipeline
 
@@ -59,7 +59,7 @@ This project leverages a **Universal JavaScript** strategy:
 Run the CLI from any project you want to deploy:
 
 ```bash
-jdeploy-cli
+jdeploy
 ```
 
 ### Workflow
@@ -74,7 +74,7 @@ jdeploy-cli
 
 All preferences, registered JBoss servers, JVM memory profiles, and debug ports are safely saved locally at:
 ```bash
-~/.jdeploy-cli/config.json
+~/.jdeploy/config.json
 ```
 
 ---
@@ -89,5 +89,5 @@ All preferences, registered JBoss servers, JVM memory profiles, and debug ports 
 
 Example:
 ```bash
-jdeploy-cli --list
+jdeploy --list
 ```
