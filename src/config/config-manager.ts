@@ -6,7 +6,7 @@ import { homedir } from 'os';
 import { Config } from '../servers.ts';
 import { SERVER_PATHS } from '../constants.ts';
 
-const CONFIG_DIR = join(homedir(), '.jdeploy');
+const CONFIG_DIR = join(homedir(), '.jbdeploy');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 
 export function getConfig(): Config {

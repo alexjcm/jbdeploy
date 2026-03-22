@@ -1,22 +1,30 @@
 {
-  "name": "jdeploy",
+  "name": "jbdeploy",
   "module": "index.ts",
   "type": "module",
+  "main": "./dist/index.js",
   "version": "1.0.0",
   "description": "CLI tool to deploy EAR/WAR artifacts to JBoss or Wildfly with automatic build detection.",
   "author": "Alex JCM",
   "license": "MIT",
   "keywords": ["jboss", "wildfly", "deploy", "cli", "automation", "java", "maven", "gradle"],
-  "files": ["dist", "README.md", "LICENSE", "package.json"],
+  "files": ["dist", "README.md", "LICENSE"],
+  "engines": {
+    "node": ">=18",
+    "bun": ">=1.0"
+  },
   "bin": {
-    "jdeploy": "./src/index.ts"
+    "jbdeploy": "./dist/index.js"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
   },
   "scripts": {
     "start": "bun run src/index.ts",
     "dev": "bun --watch run src/index.ts",
     "build": "tsup",
     "local:link": "bun link",
-    "prepublishOnly": "bun run build && echo 'Ready to publish! Remember to point bin to ./dist/index.js if publishing to public NPM.'",
+    "prepublishOnly": "bun run build",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix"
   },

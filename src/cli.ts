@@ -38,7 +38,7 @@ async function main() {
   const args = process.argv.slice(2);
 
   if (args.includes('--help') || args.includes('-h')) {
-    log.intro('Usage: jdeploy [options]');
+    log.intro('Usage: jbdeploy [options]');
     process.stdout.write('\n');
     log.info('Options:');
     process.stdout.write('    --list    List currently deployed artifacts on the server\n');
@@ -46,7 +46,7 @@ async function main() {
     process.stdout.write('    --help, -h Show this help message\n\n');
 
     log.info('Configuration:');
-    process.stdout.write('    • Stored locally at ~/.jdeploy/config.json\n');
+    process.stdout.write('    • Stored locally at ~/.jbdeploy/config.json\n');
     process.stdout.write('    • Contains server paths, debug ports, and JVM memory profiles.\n\n');
 
     log.info('Features:');

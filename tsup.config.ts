@@ -8,6 +8,7 @@ export default defineConfig({
   clean: true,
   minify: true,
   shims: true,
+  splitting: false,
   platform: 'node',
   banner: {
     js: '#!/usr/bin/env node',

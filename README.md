@@ -8,7 +8,7 @@
 CLI tool to deploy EAR/WAR artifacts to **JBoss** or **Wildfly**.
 
 <p align="center">
-  <img src="demo.gif" alt="jdeploy demo" width="800"/>
+  <img src="demo.gif" alt="jbdeploy demo" width="800"/>
 </p>
 
 ## Features
@@ -23,11 +23,16 @@ CLI tool to deploy EAR/WAR artifacts to **JBoss** or **Wildfly**.
 
 ## 📋 Requirements
 
-- **Bun** (Recommended for development) or **Node.js v18+** (For distribution)
+- **Bun** (Recommended for development) or **Node.js v22+** (For distribution)
 - **Gradle** or **Maven** (or project wrappers `gradlew` / `mvnw`)
 - **JBoss/Wildfly** configured locally
 
 ## ⚙️ Installation & Development
+
+## Installation
+npm install -g jbdeploy
+# or
+bun add -g jbdeploy
 
 ### For Users (Node.js)
 If you want to use the stable, compiled version:
@@ -46,7 +51,7 @@ bun install
 ```bash
 bun run local:link
 ```
-Now you can use `jdeploy` from any terminal. It executes the source code via Bun, making your changes **immediately active**.
+Now you can use `jbdeploy` from any terminal. It executes the source code via Bun, making your changes **immediately active**.
 
 ## 🏗️ Build Pipeline
 
@@ -59,7 +64,7 @@ This project leverages a **Universal JavaScript** strategy:
 Run the CLI from any project you want to deploy:
 
 ```bash
-jdeploy
+jbdeploy
 ```
 
 ### Workflow
@@ -74,7 +79,7 @@ jdeploy
 
 All preferences, registered JBoss servers, JVM memory profiles, and debug ports are safely saved locally at:
 ```bash
-~/.jdeploy/config.json
+~/.jbdeploy/config.json
 ```
 
 ---
@@ -89,5 +94,5 @@ All preferences, registered JBoss servers, JVM memory profiles, and debug ports 
 
 Example:
 ```bash
-jdeploy --list
+jbdeploy --list
 ```
