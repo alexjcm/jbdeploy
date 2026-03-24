@@ -1,4 +1,5 @@
 import { tasks } from '@clack/prompts';
+import { readFileSync } from 'fs';
 import { log } from './ui/logger.ts';
 import { AppServer } from './servers.ts';
 import { EXIT_CODES } from './constants.ts';
@@ -10,7 +11,16 @@ import { startServer } from './server/start-server.ts';
 import { buildProject, detectBuildTool } from './core/build-project.ts';
 import { findArtifacts } from './core/find-artifact.ts';
 import { deployArtifact } from './core/deploy-artifact.ts';
-import { handleListDeployments, handleCleanMarkers } from './commands/server-commands.ts';
+
+function getCliVersion(): string {
+  try {
+    const pkgRaw = readFileSync(new URL('../package.json', import.meta.url), 'utf-8');
+    const pkg = JSON.parse(pkgRaw) as { version?: string };
+    return pkg.version ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
 
 async function main() {
   // Global exit handlers to ensure cursor is restored
@@ -27,23 +37,19 @@ async function main() {
     process.stdout.write('\x1b[?25h');
   });
 
-  log.intro('🚀 Deploy CLI');
-
-  if (!process.stdout.isTTY) {
-    log.error('This tool requires an interactive terminal (TTY).', 'Additional flags for automation will be required in the future.');
-    process.exit(EXIT_CODES.USAGE_ERROR);
-  }
-
-  let config = getConfig();
   const args = process.argv.slice(2);
+
+  if (args.includes('--version') || args.includes('-v')) {
+    process.stdout.write(`${getCliVersion()}\n`);
+    process.exit(EXIT_CODES.SUCCESS);
+  }
 
   if (args.includes('--help') || args.includes('-h')) {
     log.intro('Usage: jbdeploy [options]');
     process.stdout.write('\n');
     log.info('Options:');
-    process.stdout.write('    --list    List currently deployed artifacts on the server\n');
-    process.stdout.write('    --clean   Clean error markers (.failed, .pending) on the server\n');
-    process.stdout.write('    --help, -h Show this help message\n\n');
+    process.stdout.write('    --help, -h       Show this help message\n');
+    process.stdout.write('    --version, -v    Show current version\n\n');
 
     log.info('Configuration:');
     process.stdout.write('    • Stored locally at ~/.jbdeploy/config.json\n');
@@ -58,20 +64,14 @@ async function main() {
     process.exit(EXIT_CODES.SUCCESS);
   }
 
-  // Handle flags that don't need the main menu
-  if (args.includes('--list') || args.includes('--clean')) {
-    const server = config.servers.find(s => s.name === config.lastServer) || config.servers[0];
-    if (!server) {
-      log.cancel('No servers configured. Run the CLI without flags first.');
-      process.exit(EXIT_CODES.GENERAL_ERROR);
-    }
-
-    if (args.includes('--list')) await handleListDeployments(server);
-    if (args.includes('--clean')) await handleCleanMarkers(server);
-    
-    log.outro('Utility executed');
-    return;
+  if (!process.stdout.isTTY) {
+    log.error('This tool requires an interactive terminal (TTY).', 'Additional flags for automation will be required in the future.');
+    process.exit(EXIT_CODES.USAGE_ERROR);
   }
+
+  log.intro('🚀 Deploy CLI');
+
+  let config = getConfig();
 
   let selectedServer: AppServer;
 

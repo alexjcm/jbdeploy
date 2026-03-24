@@ -16,5 +16,5 @@ export default defineConfig({
   // Do not bundle dependencies; rely on npm install
   noExternal: [],
   // Node.js target
-  target: 'node18',
+  target: 'node24',
 });

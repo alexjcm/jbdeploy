@@ -23,7 +23,7 @@ CLI tool to deploy EAR/WAR artifacts to **JBoss** or **Wildfly**.
 
 ## 📋 Requirements
 
-- **Bun** (Recommended for development) or **Node.js v22+** (For distribution)
+- **Bun** (Recommended for development) or **Node.js v24+** (For distribution)
 - **Gradle** or **Maven** (or project wrappers `gradlew` / `mvnw`)
 - **JBoss/Wildfly** configured locally
 
@@ -88,11 +88,10 @@ All preferences, registered JBoss servers, JVM memory profiles, and debug ports 
 
 | Flag | Description |
 |---|---|
-| `--list` | List deployed artifacts and their status (`✔ deployed`, `✖ failed`, etc.) |
-| `--clean` | Clean error markers (`.failed`, `.pending`) on the active server |
 | `--help`, `-h` | Show help |
+| `--version`, `-v` | Show current version |
 
 Example:
 ```bash
-jbdeploy --list
+jbdeploy --help
 ```
