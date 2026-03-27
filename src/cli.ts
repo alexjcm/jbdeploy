@@ -1,15 +1,15 @@
 import { tasks } from '@clack/prompts';
 import { readFileSync } from 'fs';
 import { log } from './ui/logger.ts';
-import { AppServer } from './servers.ts';
+import { AppServer, LastDeployment } from './servers.ts';
 import { EXIT_CODES } from './constants.ts';
 import { getConfig, saveConfig } from './config/config-manager.ts';
-import { selectArtifact, selectAction, selectServerMode, selectServer, addNewServerFlow } from './ui/prompts.ts';
+import { selectArtifact, selectAction, selectServerMode, selectServer, addNewServerFlow, confirmReuseDeployment } from './ui/prompts.ts';
 import { isServerRunning } from './server/detect-running.ts';
 import { cleanServerTemp } from './server/clean-temp.ts';
 import { startServer } from './server/start-server.ts';
 import { buildProject, detectBuildTool } from './core/build-project.ts';
-import { findArtifacts } from './core/find-artifact.ts';
+import { findArtifacts, Artifact } from './core/find-artifact.ts';
 import { deployArtifact } from './core/deploy-artifact.ts';
 
 function getCliVersion(): string {
@@ -72,33 +72,100 @@ async function main() {
   log.intro('🚀 Deploy CLI');
 
   let config = getConfig();
+  let selectedServer: AppServer | undefined;
+  let initialReuse: { 
+    action: 'build-deploy' | 'deploy-only' | 'start-only', 
+    artifact: Artifact | null, 
+    mode: 'normal' | 'debug', 
+    port?: number, 
+    server: AppServer 
+  } | null = null;
 
-  let selectedServer: AppServer;
+  const cwd = process.cwd();
+  const lastDep: LastDeployment | undefined = config.lastDeployments?.[cwd];
 
-  if (config.servers.length === 0) {
-    selectedServer = await addNewServerFlow(config);
-    // Refresh config after adding
-    config = getConfig();
-  } else {
-    const serverChoice = await selectServer(config);
-    if (serverChoice === 'ADD_NEW') {
-      selectedServer = await addNewServerFlow(config);
-      // Refresh config after adding
-      config = getConfig();
-    } else {
-      selectedServer = serverChoice;
-      if (config.lastServer !== selectedServer.name) {
-        config.lastServer = selectedServer.name;
-        await saveConfig(config);
+  if (lastDep) {
+    const server = config.servers.find(s => s.name === lastDep.serverName);
+    if (server) {
+      const reuse = await confirmReuseDeployment(lastDep);
+      if (reuse) {
+        selectedServer = server;
+        const buildTool = detectBuildTool();
+        const artifacts = await findArtifacts(!!buildTool);
+        const artifact = artifacts.find(a => a.name === lastDep.artifactName) || null;
+
+        if (!artifact && lastDep.action !== 'start-only') {
+          log.warn(`Artifact '${lastDep.artifactName}' not found. Falling back to manual flow.`);
+        } else {
+          initialReuse = {
+            action: lastDep.action,
+            artifact,
+            mode: lastDep.mode,
+            server,
+            ...(lastDep.port ? { port: lastDep.port } : {})
+          };
+        }
       }
     }
   }
 
-  log.info(`Server: ${selectedServer.name} (${selectedServer.home})`);
+  if (!selectedServer) {
+    if (config.servers.length === 0) {
+      selectedServer = await addNewServerFlow(config);
+      // Refresh config after adding
+      config = getConfig();
+    } else {
+      const serverChoice = await selectServer(config);
+      if (serverChoice === 'ADD_NEW') {
+        selectedServer = await addNewServerFlow(config);
+        // Refresh config after adding
+        config = getConfig();
+      } else {
+        selectedServer = serverChoice;
+        if (config.lastServer !== selectedServer.name) {
+          config.lastServer = selectedServer.name;
+          await saveConfig(config);
+        }
+      }
+    }
+  }
 
   // CLI Loop
+  let firstIteration = true;
+
   while (true) {
-    const action = await selectAction();
+    let action: 'build-deploy' | 'deploy-only' | 'start-only';
+    let artifact: Artifact | null = null;
+    let mode: 'normal' | 'debug' | undefined;
+    let port: number | undefined;
+    let reused = false;
+
+    // Reuse logic (only on first iteration)
+    if (firstIteration && initialReuse) {
+      action = initialReuse.action;
+      artifact = initialReuse.artifact;
+      mode = initialReuse.mode;
+      port = initialReuse.port;
+      reused = true;
+      log.info(`Reusing: ${action} -> ${artifact?.name || 'server only'} on ${selectedServer!.name}`);
+    }
+    firstIteration = false;
+
+    if (!reused) {
+      const buildTool = detectBuildTool();
+      const currentArtifacts = await findArtifacts(!!buildTool);
+      
+      action = await selectAction(
+        currentArtifacts.length === 0 ? 'build-deploy' : undefined,
+        { 
+          canBuild: !!buildTool, 
+          canDeploy: currentArtifacts.length > 0 
+        }
+      );
+    } else {
+      action = action!; 
+    }
+
     const isRunning = await isServerRunning();
 
     if (action === 'start-only') {
@@ -108,7 +175,11 @@ async function main() {
         process.exit(EXIT_CODES.SUCCESS);
       }
 
-      const { mode, port } = await selectServerMode(selectedServer.lastDebugPort, selectedServer.lastServerMode);
+      if (!reused) {
+        const result = await selectServerMode(selectedServer.lastDebugPort, selectedServer.lastServerMode);
+        mode = result.mode;
+        port = result.port;
+      }
       
       log.step('Server stopped — cleaning temporary directories (data, log, tmp)');
       await cleanServerTemp(selectedServer.home);
@@ -116,10 +187,21 @@ async function main() {
       log.step(`Starting server in ${mode} mode${mode === 'debug' ? ` (port ${port})` : ''}...`);
 
       try {
-        selectedServer.lastServerMode = mode;
+        selectedServer.lastServerMode = mode!;
         if (mode === 'debug' && port) {
           selectedServer.lastDebugPort = port;
         }
+        
+        // Save successful start-only to project memory
+        if (!config.lastDeployments) config.lastDeployments = {};
+        config.lastDeployments[cwd] = {
+          serverName: selectedServer.name,
+          action: 'start-only',
+          artifactName: 'server-only',
+          mode: mode!,
+          ...((port || selectedServer.lastDebugPort) ? { port: (port || selectedServer.lastDebugPort) } : {})
+        };
+        
         await saveConfig(config);
         
         await startServer(selectedServer.home, mode === 'debug', port, selectedServer.memoryProfile);
@@ -131,7 +213,7 @@ async function main() {
     }
 
     // Build + Deploy or Deploy Only
-    if (action === 'build-deploy') {
+    if (action === 'build-deploy' && !reused) {
       const buildTool = detectBuildTool();
       if (!buildTool) {
         log.error('No build tool detected', 'This project does not contain build.gradle, build.gradle.kts or pom.xml at the root.');
@@ -163,36 +245,46 @@ async function main() {
       }
     }
 
-    // Find artifacts after potential build
-    const artifacts = await findArtifacts();
-    if (artifacts.length === 0) {
-      log.warn('No artifacts found (.war or .ear). Make sure you have built the project.');
-      continue;
+    // Refresh/Select artifacts
+    if (!reused) {
+      const buildTool = detectBuildTool();
+      const currentArtifacts = await findArtifacts(!!buildTool);
+      if (currentArtifacts.length === 0) {
+        log.warn('No artifacts found (.war or .ear). Make sure you have built the project.');
+        continue;
+      }
+      artifact = await selectArtifact(currentArtifacts);
     }
 
-    const artifact = await selectArtifact(artifacts);
     let deploySuccess = false;
 
     try {
       await tasks([
         {
-          title: `Deploying ${artifact.name}`,
+          title: `Deploying ${artifact!.name}`,
           task: async (taskLog) => {
             if (!isRunning) {
               taskLog('Cleaning temporary directories (data, log, tmp)');
               await cleanServerTemp(selectedServer.home);
             }
             
-            const { join } = await import('path');
-            const { SERVER_PATHS } = await import('./constants.ts');
-            const deploymentsDir = join(selectedServer.home, ...SERVER_PATHS.DEPLOYMENTS);
-
-            taskLog(`Transferring ${artifact.name} to ${deploymentsDir}`);
-            deploySuccess = await deployArtifact(artifact, selectedServer.home, isRunning);
+            deploySuccess = await deployArtifact(artifact!, selectedServer.home, isRunning);
             
             if (!deploySuccess) {
               throw new Error('Deployment failed (.failed marker or timeout)');
             }
+            
+            // Save successful deployment to project memory
+            if (!config.lastDeployments) config.lastDeployments = {};
+            config.lastDeployments[cwd] = {
+              serverName: selectedServer.name,
+              action: action === 'build-deploy' ? 'build-deploy' : 'deploy-only',
+              artifactName: artifact!.name,
+              mode: mode || selectedServer.lastServerMode || 'normal',
+              ...( (port || selectedServer.lastDebugPort) ? { port: (port || selectedServer.lastDebugPort) } : {} )
+            };
+            await saveConfig(config);
+
             return isRunning ? 'Deployment validated (.deployed detected)' : 'Artifact transferred successfully (ready for boot)';
           },
         },
@@ -202,12 +294,16 @@ async function main() {
     }
 
     if (deploySuccess && !isRunning) {
-      const { mode, port } = await selectServerMode(selectedServer.lastDebugPort, selectedServer.lastServerMode);
+      if (!reused) {
+        const result = await selectServerMode(selectedServer.lastDebugPort, selectedServer.lastServerMode);
+        mode = result.mode;
+        port = result.port;
+      }
       
       log.step(`Starting server in ${mode} mode${mode === 'debug' ? ` (port ${port})` : ''}...`);
 
       try {
-        selectedServer.lastServerMode = mode;
+        selectedServer.lastServerMode = mode!;
         if (mode === 'debug' && port) {
           selectedServer.lastDebugPort = port;
         }

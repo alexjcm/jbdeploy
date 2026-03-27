@@ -9,14 +9,14 @@ export interface Artifact {
   size: number;
 }
 
-export async function findArtifacts(): Promise<Artifact[]> {
+export async function findArtifacts(includeSubprojects = true): Promise<Artifact[]> {
   const patterns = ARTIFACT_EXTENSIONS.flatMap(ext => [
     // Gradle
     `build/libs/*${ext}`,
-    `*/build/libs/*${ext}`,
+    ...(includeSubprojects ? [`*/build/libs/*${ext}`] : []),
     // Maven
     `target/*${ext}`,
-    `*/target/*${ext}`,
+    ...(includeSubprojects ? [`*/target/*${ext}`] : []),
   ]);
 
   const paths = await sync(patterns, { onlyFiles: true });

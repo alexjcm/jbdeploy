@@ -1,5 +1,5 @@
 import { group, text, select, isCancel, cancel, note } from '@clack/prompts';
-import { Config, AppServer } from '../servers.ts';
+import { Config, AppServer, LastDeployment } from '../servers.ts';
 import { saveConfig, validateServerHome, normalizePath } from '../config/config-manager.ts';
 import { Artifact, formatBytes } from '../core/find-artifact.ts';
 import { EXIT_CODES, DEFAULT_DEBUG_PORT } from '../constants.ts';
@@ -119,14 +119,26 @@ export async function selectArtifact(artifacts: Artifact[]): Promise<Artifact> {
   return selected;
 }
 
-export async function selectAction(): Promise<'build-deploy' | 'deploy-only' | 'start-only'> {
+export async function selectAction(
+  initialValue?: 'build-deploy' | 'deploy-only' | 'start-only',
+  options: { canBuild: boolean; canDeploy: boolean } = { canBuild: true, canDeploy: true }
+): Promise<'build-deploy' | 'deploy-only' | 'start-only'> {
+  const menuOptions = [
+    { value: 'build-deploy', label: 'build + copy + deploy' },
+    { value: 'deploy-only', label: 'copy + deploy' },
+    { value: 'start-only', label: 'start server only' },
+  ];
+
+  const filteredOptions = menuOptions.filter((opt) => {
+    if (opt.value === 'build-deploy') return options.canBuild;
+    if (opt.value === 'deploy-only') return options.canDeploy;
+    return true;
+  });
+
   const action = await select({
     message: 'Select action:',
-    options: [
-      { value: 'build-deploy', label: 'build + copy + deploy' },
-      { value: 'deploy-only', label: 'copy + deploy' },
-      { value: 'start-only', label: 'start server only' },
-    ],
+    options: filteredOptions,
+    ...(initialValue && filteredOptions.some((o) => o.value === initialValue) ? { initialValue } : {}),
   });
 
   if (isCancel(action)) {
@@ -134,7 +146,7 @@ export async function selectAction(): Promise<'build-deploy' | 'deploy-only' | '
     process.exit(EXIT_CODES.INTERRUPTED);
   }
 
-  return action;
+  return action as 'build-deploy' | 'deploy-only' | 'start-only';
 }
 
 export async function selectServerMode(lastUsedPort?: number, lastServerMode?: 'normal' | 'debug'): Promise<{ mode: 'normal' | 'debug'; port?: number }> {
@@ -181,4 +193,26 @@ export async function selectServerMode(lastUsedPort?: number, lastServerMode?: '
     mode: finalMode, 
     ...(finalPort ? { port: finalPort } : {})
   };
+}
+
+export async function confirmReuseDeployment(last: LastDeployment): Promise<boolean> {
+  const portInfo = last.port ? `:${last.port}` : '';
+  const result = await select({
+    message: 'Reuse last deployment for this project?',
+    options: [
+      { 
+        value: true, 
+        label: `Yes, reuse last settings`,
+        hint: `[Server: ${last.serverName}, Action: ${last.action}, Artifact: ${last.artifactName}, Mode: ${last.mode}${portInfo}]`
+      },
+      { value: false, label: 'No, skip to manual flow' },
+    ],
+  });
+
+  if (isCancel(result)) {
+    cancel('Operation cancelled');
+    process.exit(EXIT_CODES.INTERRUPTED);
+  }
+
+  return result as boolean;
 }
