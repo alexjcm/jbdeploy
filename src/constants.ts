@@ -32,3 +32,24 @@ export const SERVER_SCRIPT = {
   UNIX:     'standalone.sh',
   OS_FLAG:  '-Dos.name=Linux',
 } as const;
+
+export const ACTIONS = {
+  BUILD_DEPLOY: 'build-deploy',
+  DEPLOY_ONLY: 'deploy-only',
+  START_ONLY: 'start-only',
+} as const;
+export type DeployAction = typeof ACTIONS[keyof typeof ACTIONS];
+
+export const SERVER_MODES = {
+  NORMAL: 'normal',
+  DEBUG: 'debug',
+} as const;
+export type ServerMode = typeof SERVER_MODES[keyof typeof SERVER_MODES];
+
+export const NAV = {
+  BACK: 'BACK'
+} as const;
+
+export const UI_MESSAGES = {
+  GOODBYE: '\x1b[0m\x1b[2m👋 Bye!\x1b[0m'
+} as const;

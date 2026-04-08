@@ -1,16 +1,18 @@
+import { ServerMode, DeployAction } from './constants.ts';
+
 export interface AppServer {
   name: string;
   home: string;
   lastDebugPort?: number;
-  lastServerMode?: 'normal' | 'debug';
+  lastServerMode?: ServerMode;
   memoryProfile?: 'minimal' | 'recommended';
 }
 
 export interface LastDeployment {
   serverName: string;
-  action: 'build-deploy' | 'deploy-only' | 'start-only';
+  action: DeployAction;
   artifactName: string;
-  mode: 'normal' | 'debug';
+  mode: ServerMode;
   port?: number;
 }
 

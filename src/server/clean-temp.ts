@@ -2,7 +2,7 @@ import { rmSync, existsSync } from 'fs';
 import { join } from 'path';
 import { SERVER_PATHS } from '../constants.ts';
 
-export async function cleanServerTemp(serverHome: string): Promise<void> {
+export function cleanServerTemp(serverHome: string): void {
   const dirsToClean = [
     join(serverHome, ...SERVER_PATHS.DATA),
     join(serverHome, ...SERVER_PATHS.LOG),

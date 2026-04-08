@@ -52,6 +52,10 @@ export async function startServer(
   const args: string[] = isWin ? [] : ['-Dos.name=Linux'];
 
   return new Promise<void>((resolve, reject) => {
+    let sigintReceived = false;
+    const onSigInt = () => { sigintReceived = true; };
+    process.on('SIGINT', onSigInt);
+
     const proc = spawn(scriptPath, args, {
       cwd: binDir,
       stdio: 'inherit',
@@ -62,8 +66,11 @@ export async function startServer(
       shell: isWin // Modern practice for `.bat` and script execution safely
     });
 
-    proc.on('close', (code) => {
-      if (code === 0 || code === null) resolve();
+    proc.on('close', (code, signal) => {
+      process.off('SIGINT', onSigInt);
+      const intentional = sigintReceived || code === 0 || code === null || code === 130 || code === 143
+        || signal === 'SIGINT' || signal === 'SIGTERM';
+      if (intentional) resolve();
       else reject(new Error(`Server process exited with code ${code}`));
     });
 

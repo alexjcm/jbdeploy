@@ -7,14 +7,12 @@ export default defineConfig({
   format: ['esm'],
   clean: true,
   minify: true,
-  shims: true,
+  shims: false,
   splitting: false,
   platform: 'node',
   banner: {
     js: '#!/usr/bin/env node',
   },
-  // Do not bundle dependencies; rely on npm install
-  noExternal: [],
-  // Node.js target
+  noExternal: [/(.*)/],
   target: 'node24',
 });

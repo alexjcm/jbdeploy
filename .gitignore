@@ -50,5 +50,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+*.tgz
+
 ### Gradle ###
 .gradle
+
+TODO.md

@@ -5,7 +5,6 @@
 ![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
 ![Bun](https://img.shields.io/badge/Bun-%23000000.svg?style=for-the-badge&logo=bun&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)
 
 ![JBoss](https://img.shields.io/badge/JBoss-E2231A?style=for-the-badge&logo=jboss&logoColor=white)
 ![WildFly](https://img.shields.io/badge/WildFly-FFD400?style=for-the-badge&logo=wildfly&logoColor=white)
@@ -22,11 +21,11 @@ A **lightweight and fast** CLI tool to deploy EAR/WAR artifacts to **JBoss** or 
 *   **Persistent Preferences**: Remembers your last server, debug port, JVM memory profile, and startup mode between sessions.
 *   **Configurable Debug**: Choose your JVM debug port dynamically.
 *   **Dynamic JVM Memory**: Assign pre-configured JVM memory capacities independently for each server.
-*   **Seamless Workflow**: Automatic server startup after deployment and loop-based interface to keep you in the flow.
+*   **Seamless Workflow**: Automatic server startup after deployment and persistent loop-based interface to keep you in the flow.
 
 ## 📋 Requirements
 
-- **Bun** (Recommended for development) or **Node.js v24+** (For distribution)
+- **Bun** (Recommended for development) or **Node.js v20+** (For distribution)
 - **Gradle** or **Maven** (or project wrappers `gradlew` / `mvnw`)
 - **JBoss/Wildfly** configured locally
 
@@ -55,14 +54,10 @@ If you want to contribute or build the latest version from source:
 bun install
 ```
 
-2. Build the project:
+2. Build and enable global linking:
 ```bash
 bun run build
-```
-
-3. Enable global linking:
-```bash
-bun run local:link
+bun link
 ```
 Now you can use `jbdeploy` from any terminal.
 
@@ -85,11 +80,10 @@ jbdeploy
 3. **Build (if applicable)**: Gradle or Maven is auto-detected.
 4. **Server Mode**: If the server is stopped, choose **Normal** or **Debug** mode. Your last choice is remembered.
 5. **Auto-Start**: After a successful deployment with the server stopped, the CLI starts it automatically.
-6. **Looping**: After each action, the CLI returns to the main menu automatically.
 
 ## 📁 Configuration
 
-All preferences, registered JBoss servers, JVM memory profiles, and debug ports are safely saved locally at:
+All preferences, registered JBoss servers, JVM memory profiles, and debug ports are saved locally at:
 ```bash
 ~/.jbdeploy/config.json
 ```
@@ -104,4 +98,4 @@ jbdeploy --help
 
 ## 📄 License
 
-This project is licensed under the **MIT License**. See the [LICENSE](./LICENSE) file for details.
+MIT

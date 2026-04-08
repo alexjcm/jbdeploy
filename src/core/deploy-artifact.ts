@@ -4,6 +4,13 @@ import { copyFile, writeFile } from 'fs/promises';
 import { Artifact } from './find-artifact.ts';
 import { SERVER_PATHS, DEPLOYMENT_MARKERS } from '../constants.ts';
 
+function removeMarkers(base: string): void {
+  const { DEPLOYED, FAILED, ISDEPLOYING, SKIPDEPLOY, PENDING } = DEPLOYMENT_MARKERS;
+  for (const marker of [DEPLOYED, FAILED, ISDEPLOYING, SKIPDEPLOY, PENDING]) {
+    rmSync(`${base}${marker}`, { force: true });
+  }
+}
+
 export async function deployArtifact(artifact: Artifact, serverHome: string, isRunning = true): Promise<boolean> {
   const deploymentsDir = join(serverHome, ...SERVER_PATHS.DEPLOYMENTS);
   const destPath = join(deploymentsDir, artifact.name);
@@ -20,28 +27,16 @@ export async function deployArtifact(artifact: Artifact, serverHome: string, isR
     if (existsSync(deploymentsDir)) {
       const files = readdirSync(deploymentsDir);
       for (const file of files) {
-        // Match files starting with prefix followed by a hyphen and ending with the same extension
-        // OR exact same name (case of re-deploying same version)
         const isPreviousVersion = file.startsWith(`${prefix}-`) && file.endsWith(ext) && file !== artifact.name;
-        
         if (isPreviousVersion) {
           const fullPath = join(deploymentsDir, file);
           rmSync(fullPath, { force: true });
-          rmSync(`${fullPath}${DEPLOYMENT_MARKERS.DEPLOYED}`,    { force: true });
-          rmSync(`${fullPath}${DEPLOYMENT_MARKERS.FAILED}`,      { force: true });
-          rmSync(`${fullPath}${DEPLOYMENT_MARKERS.ISDEPLOYING}`, { force: true });
-          rmSync(`${fullPath}${DEPLOYMENT_MARKERS.SKIPDEPLOY}`,  { force: true });
-          rmSync(`${fullPath}${DEPLOYMENT_MARKERS.PENDING}`,     { force: true });
+          removeMarkers(fullPath);
         }
       }
     }
 
-    // Clean up existing markers for the exact same artifact version if it was previously deployed
-    rmSync(`${destPath}${DEPLOYMENT_MARKERS.DEPLOYED}`,    { force: true });
-    rmSync(`${destPath}${DEPLOYMENT_MARKERS.FAILED}`,      { force: true });
-    rmSync(`${destPath}${DEPLOYMENT_MARKERS.ISDEPLOYING}`, { force: true });
-    rmSync(`${destPath}${DEPLOYMENT_MARKERS.SKIPDEPLOY}`,  { force: true });
-    rmSync(`${destPath}${DEPLOYMENT_MARKERS.PENDING}`,     { force: true });
+    removeMarkers(destPath);
 
     await copyFile(artifact.path, destPath);
     
@@ -65,8 +60,9 @@ export async function deployArtifact(artifact: Artifact, serverHome: string, isR
       attempts++;
     }
     
-    return false; // Timeout
-  } catch {
+    throw new Error(`Timeout (${maxAttempts}s): Server took too long to deploy.`);
+  } catch (err) {
+    if (err instanceof Error) throw err;
     return false;
   }
 }
