@@ -8,6 +8,58 @@ export class CancelToServerSelect extends Error {
   constructor() { super('User cancelled to server select'); }
 }
 
+async function promptServerDetails(
+  existingConfig: Config,
+  currentServer?: AppServer
+): Promise<{ name: string; home: string; profile: 'minimal' | 'recommended' }> {
+  const namePromptOptions = {
+    message: 'Name for this server (e.g., wildfly-dev):',
+    placeholder: currentServer?.name ?? 'server-local',
+    ...(currentServer?.name ? { defaultValue: currentServer.name } : {}),
+    validate: (value: string | undefined) => {
+      if (!value) return 'Name is required';
+      if (existingConfig.servers.some((server) => server.name === value && server.name !== currentServer?.name)) {
+        return 'A server with this name already exists';
+      }
+    },
+  };
+  const homePromptOptions = {
+    message: 'Full path for Server Home:',
+    placeholder: currentServer?.home ?? '/opt/wildfly-20.0',
+    ...(currentServer?.home ? { defaultValue: currentServer.home } : {}),
+    validate: (value: string | undefined) => {
+      if (!value) return 'Path is required';
+      if (!validateServerHome(value)) return 'This path does not look like a valid Server Home (missing standalone/deployments)';
+    },
+  };
+
+  const result = await group(
+    {
+      name: () => text(namePromptOptions),
+      home: () => text(homePromptOptions),
+      profile: () => select({
+        message: 'Select the JVM memory profile for this server (affects -Xms and -Xmx):',
+        options: [
+          { value: 'recommended', label: '[ Recommended ] 2GB initial - 5GB max (Default)' },
+          { value: 'minimal', label: '[ Minimal     ] 1GB initial - 2GB max' },
+        ],
+        initialValue: currentServer?.memoryProfile ?? 'recommended',
+      }),
+    },
+    {
+      onCancel: () => {
+        throw new CancelToServerSelect();
+      },
+    }
+  );
+
+  return {
+    name: result.name,
+    home: normalizePath(result.home),
+    profile: result.profile as 'minimal' | 'recommended',
+  };
+}
+
 export function getActionLabel(
   action: DeployAction,
   opts: { serverRunning?: boolean } = {}
@@ -25,43 +77,11 @@ export function getActionLabel(
 }
 
 export async function addNewServerFlow(existingConfig: Config): Promise<AppServer> {
-  const result = await group(
-    {
-      name: () => text({
-        message: 'Name for this server (e.g., wildfly-dev):',
-        placeholder: 'server-local',
-        validate: (value) => {
-          if (!value) return 'Name is required';
-          if (existingConfig.servers.some(s => s.name === value)) return 'A server with this name already exists';
-        },
-      }),
-      home: () => text({
-        message: 'Full path for Server Home:',
-        placeholder: '/opt/wildfly-20.0',
-        validate: (value) => {
-          if (!value) return 'Path is required';
-          if (!validateServerHome(value)) return 'This path does not look like a valid Server Home (missing standalone/deployments)';
-        },
-      }),
-      profile: () => select({
-        message: 'Select the JVM memory profile for this server (affects -Xms and -Xmx):',
-        options: [
-          { value: 'recommended', label: '[ Recommended ] 2GB initial - 5GB max (Default)' },
-          { value: 'minimal', label: '[ Minimal     ] 1GB initial - 2GB max' },
-        ],
-        initialValue: 'recommended',
-      }),
-    },
-    {
-      onCancel: () => {
-        throw new CancelToServerSelect();
-      },
-    }
-  );
+  const result = await promptServerDetails(existingConfig);
 
   const newServer: AppServer = {
     name: result.name,
-    home: normalizePath(result.home),
+    home: result.home,
     memoryProfile: result.profile as 'minimal' | 'recommended',
   };
 
@@ -72,9 +92,54 @@ export async function addNewServerFlow(existingConfig: Config): Promise<AppServe
   };
 
   await saveConfig(newConfig);
-  note('Server saved successfully. You can review or modify this configuration directly at: ~/.jbdeploy/config.json');
+  note('Server added successfully. You can review or modify this configuration directly at: ~/.jbdeploy/config.json');
 
   return newServer;
+}
+
+export async function editServerFlow(config: Config): Promise<void> {
+  const serverToEdit = await select({
+    message: 'Select a server to edit:',
+    options: [
+      ...config.servers.map((server) => ({
+        value: server as AppServer | typeof NAV.BACK,
+        label: `${server.name} (${server.home})`,
+      })),
+      { value: NAV.BACK as AppServer | typeof NAV.BACK, label: '← Cancel' }
+    ] as { value: AppServer | typeof NAV.BACK; label: string }[]
+  });
+
+  if (isCancel(serverToEdit) || serverToEdit === NAV.BACK) return;
+
+  const target = serverToEdit as AppServer;
+  const result = await promptServerDetails(config, target);
+  const updatedServer: AppServer = {
+    ...target,
+    name: result.name,
+    home: result.home,
+    memoryProfile: result.profile,
+  };
+
+  const updatedLastDeployments = config.lastDeployments
+    ? Object.fromEntries(
+      Object.entries(config.lastDeployments).map(([projectPath, deployment]) => [
+        projectPath,
+        deployment.serverName === target.name
+          ? { ...deployment, serverName: updatedServer.name }
+          : deployment,
+      ])
+    )
+    : undefined;
+
+  const newConfig: Config = {
+    ...config,
+    servers: config.servers.map((server) => server.name === target.name ? updatedServer : server),
+    ...(config.lastServer === target.name ? { lastServer: updatedServer.name } : {}),
+    ...(updatedLastDeployments ? { lastDeployments: updatedLastDeployments } : {}),
+  };
+
+  await saveConfig(newConfig);
+  note(`Server '${updatedServer.name}' updated successfully. Project references were kept in sync.`, 'Saved');
 }
 
 export async function deleteServerFlow(config: Config): Promise<void> {
@@ -94,7 +159,7 @@ export async function deleteServerFlow(config: Config): Promise<void> {
   const target = serverToDelete as AppServer;
 
   const confirmDelete = await confirm({
-    message: `Are you sure you want to delete '${target.name}'?`,
+    message: `Are you sure you want to delete '${target.name}'? This will remove all associated project references.`,
     initialValue: false
   });
 
@@ -117,7 +182,7 @@ export async function deleteServerFlow(config: Config): Promise<void> {
   note(`Server '${target.name}' has been removed from configuration.`, 'Deleted');
 }
 
-export async function selectServer(config: Config): Promise<AppServer | 'ADD_NEW' | 'DELETE_SERVER'> {
+export async function selectServer(config: Config): Promise<AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER'> {
   const sortedServers = [...config.servers].sort((a, b) => {
     if (a.name === config.lastServer) return -1;
     if (b.name === config.lastServer) return 1;
@@ -126,12 +191,13 @@ export async function selectServer(config: Config): Promise<AppServer | 'ADD_NEW
 
   const options = [
     ...sortedServers.map(s => ({
-      value: s as AppServer | 'ADD_NEW' | 'DELETE_SERVER',
+      value: s as AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER',
       label: `${s.name} (${s.home})`,
     })),
-    { value: 'ADD_NEW' as AppServer | 'ADD_NEW' | 'DELETE_SERVER', label: '➕ Add new server...' },
-    ...(config.servers.length > 0 ? [{ value: 'DELETE_SERVER' as AppServer | 'ADD_NEW' | 'DELETE_SERVER', label: '🗑️  Delete saved server...' }] : [])
-  ] as { value: AppServer | 'ADD_NEW' | 'DELETE_SERVER'; label: string }[];
+    { value: 'ADD_NEW' as AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER', label: '➕ Add new server...' },
+    ...(config.servers.length > 0 ? [{ value: 'EDIT_SERVER' as AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER', label: '✏️  Edit saved server...' }] : []),
+    ...(config.servers.length > 0 ? [{ value: 'DELETE_SERVER' as AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER', label: '🗑️  Delete saved server...' }] : [])
+  ] as { value: AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER'; label: string }[];
 
   const selected = await select({
     message: 'Select server:',
@@ -147,6 +213,14 @@ export async function selectServer(config: Config): Promise<AppServer | 'ADD_NEW
   return selected!;
 }
 
+function getArtifactRecommendationHint(artifact: Artifact, lastArtifactName?: string): string {
+  if (artifact.name === lastArtifactName) {
+    return 'Recommended: last artifact deployed in this project';
+  }
+
+  return 'Recommended: most recently modified artifact found';
+}
+
 export async function selectArtifact(artifacts: Artifact[], lastArtifactName?: string): Promise<Artifact | typeof NAV.BACK> {
   if (artifacts.length === 1) {
     const artifact = artifacts[0]!;
@@ -154,8 +228,23 @@ export async function selectArtifact(artifacts: Artifact[], lastArtifactName?: s
     return artifact;
   }
 
-  const sorted = [...artifacts].sort((a, b) => b.size - a.size);
-  const defaultArtifact = sorted.find(a => a.name === lastArtifactName) || sorted[0];
+  const sorted = [...artifacts].sort((a, b) => {
+    const aMatchesLast = a.name === lastArtifactName ? 1 : 0;
+    const bMatchesLast = b.name === lastArtifactName ? 1 : 0;
+
+    if (aMatchesLast !== bMatchesLast) {
+      return bMatchesLast - aMatchesLast;
+    }
+    if (a.mtimeMs !== b.mtimeMs) {
+      return b.mtimeMs - a.mtimeMs;
+    }
+    if (a.size !== b.size) {
+      return b.size - a.size;
+    }
+
+    return a.name.localeCompare(b.name);
+  });
+  const defaultArtifact = sorted[0]!;
 
   const selected = await select({
     message: `${artifacts.length} artifacts found. Select one:`,
@@ -163,6 +252,7 @@ export async function selectArtifact(artifacts: Artifact[], lastArtifactName?: s
       ...sorted.map(a => ({
         value: a as Artifact | typeof NAV.BACK,
         label: `${a.name} (${formatBytes(a.size)})`,
+        ...(a.path === defaultArtifact.path ? { hint: getArtifactRecommendationHint(a, lastArtifactName) } : {}),
       })),
       { value: NAV.BACK, label: '← Back' },
     ],
@@ -260,24 +350,24 @@ export async function selectServerMode(
   };
 }
 
-export async function confirmReuseDeployment(
+export async function selectProjectEntry(
   last: LastDeployment,
   opts: { serverRunning?: boolean } = {}
-): Promise<boolean> {
+): Promise<'REPEAT_LAST' | 'MANUAL_FLOW'> {
   const actionLabel = getActionLabel(last.action, { serverRunning: opts.serverRunning ?? false });
   const modeLabel = last.mode === SERVER_MODES.DEBUG
     ? `Debug${last.port ? ` (${last.port})` : ''}`
     : 'Normal';
 
   const result = await select({
-    message: 'Reuse last deployment for this project?',
+    message: 'How do you want to continue in this project?',
     options: [
       {
-        value: true,
-        label: `Yes, reuse last settings`,
+        value: 'REPEAT_LAST',
+        label: '⚡ Repeat last flow',
         hint: `[Server: ${last.serverName}, Action: ${actionLabel}, Artifact: ${last.artifactName}, Mode: ${modeLabel}]`
-      },
-      { value: false, label: 'No, skip to manual flow' },
+      } as const,
+      { value: 'MANUAL_FLOW', label: 'Choose manually' } as const,
     ],
   });
 
@@ -286,5 +376,5 @@ export async function confirmReuseDeployment(
     process.exit(EXIT_CODES.INTERRUPTED);
   }
 
-  return result as boolean;
+  return result as 'REPEAT_LAST' | 'MANUAL_FLOW';
 }

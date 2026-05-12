@@ -1,6 +1,4 @@
 export const System = {
   isWindows: process.platform === 'win32',
-  isMac: process.platform === 'darwin',
-  isLinux: process.platform === 'linux',
-  platform: process.platform
+  isMac: process.platform === 'darwin'
 } as const;

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - 2026-05-10
+
+### Changed
+- Added an explicit `Repeat last flow` entry point for project-local reuse instead of relying on an implicit confirmation prompt.
+- Improved artifact selection by preselecting the most relevant candidate using the last deployed artifact and recent modification time.
+- Added quick editing for saved servers directly from the interactive server selection flow.
+
 ## [1.3.0] - 2026-04-18
 
 ### Changed

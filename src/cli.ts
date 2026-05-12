@@ -4,7 +4,7 @@ import { log } from './ui/logger.ts';
 import { AppServer, LastDeployment } from './servers.ts';
 import { EXIT_CODES, ACTIONS, SERVER_MODES, NAV, DeployAction, ServerMode } from './constants.ts';
 import { getConfig, saveConfig } from './config/config-manager.ts';
-import { selectArtifact, selectAction, selectServerMode, selectServer, deleteServerFlow, addNewServerFlow, confirmReuseDeployment, CancelToServerSelect, getActionLabel } from './ui/prompts.ts';
+import { selectArtifact, selectAction, selectServerMode, selectServer, deleteServerFlow, editServerFlow, addNewServerFlow, selectProjectEntry, CancelToServerSelect, getActionLabel } from './ui/prompts.ts';
 import { isServerRunning } from './server/detect-running.ts';
 import { cleanServerTemp } from './server/clean-temp.ts';
 import { listDeployedArtifacts } from './server/list-deployed-artifacts.ts';
@@ -66,10 +66,13 @@ async function main() {
 
     log.info('Configuration:');
     process.stdout.write('    • Stored locally at ~/.jbdeploy/config.json\n');
-    process.stdout.write('    • Contains server paths, debug ports, and JVM memory profiles.\n\n');
+    process.stdout.write('    • Contains server paths, debug ports, JVM memory profiles, and last project deployment flow.\n\n');
 
     log.info('Features:');
     process.stdout.write('    • Semantic logging and persistent interactive UI.\n');
+    process.stdout.write('    • Explicit repeat-last-flow entry for the current project.\n');
+    process.stdout.write('    • Smarter artifact recommendation based on last deployment and recent build output.\n');
+    process.stdout.write('    • Quick editing of saved servers directly from the selection flow.\n');
     process.stdout.write('    • Automatic cleanup of JBoss (data, log, tmp) when started through CLI.\n');
     process.stdout.write('    • Configurable Debug Port (default: 5005).\n');
     process.stdout.write('    • Auto-start server after successful build/deployment if stopped.\n');
@@ -82,7 +85,7 @@ async function main() {
     process.exit(EXIT_CODES.USAGE_ERROR);
   }
 
-  log.intro('🚀 Deploy CLI');
+  log.intro('🚀 JB Deploy CLI');
 
   const cwd = process.cwd();
 
@@ -96,32 +99,41 @@ async function main() {
       action: DeployAction,
       artifact: Artifact | null,
       mode: ServerMode,
-      port?: number,
-      server: AppServer
+      port?: number
     } | null = null;
+    let preferredInitialAction: DeployAction | undefined;
 
     const lastDep: LastDeployment | undefined = config.lastDeployments?.[cwd];
 
     // Only prompt for reuse on the very first CLI boot, not when returning via Back
     if (isFirstAppRun && lastDep) {
       const server = config.servers.find(s => s.name === lastDep.serverName);
-      if (server) {
-        const isRunningOnBoot = await isServerRunning(server.home);
-        const reuse = await confirmReuseDeployment(lastDep, { serverRunning: isRunningOnBoot });
-        if (reuse) {
+      const isRunningOnBoot = server ? await isServerRunning(server.home) : false;
+      const entryChoice = await selectProjectEntry(lastDep, { serverRunning: isRunningOnBoot });
+
+      if (entryChoice === 'REPEAT_LAST') {
+        preferredInitialAction = lastDep.action;
+
+        if (!server) {
+          log.warn(`Saved server '${lastDep.serverName}' no longer exists. Falling back to manual flow.`);
+        } else {
           selectedServer = server;
+          selectedServer.lastServerMode = lastDep.mode;
+          if (lastDep.port) {
+            selectedServer.lastDebugPort = lastDep.port;
+          }
+
           const buildTool = detectBuildTool();
           const artifacts = await findArtifacts(!!buildTool);
           const artifact = artifacts.find(a => a.name === lastDep.artifactName) || null;
 
           if (!artifact && lastDep.action !== ACTIONS.START_ONLY) {
-            log.warn(`Artifact '${lastDep.artifactName}' not found. Falling back to manual flow.`);
+            log.warn(`Artifact '${lastDep.artifactName}' not found. Falling back to manual artifact selection.`);
           } else {
             initialReuse = {
               action: lastDep.action,
               artifact,
               mode: lastDep.mode,
-              server,
               ...(lastDep.port ? { port: lastDep.port } : {})
             };
           }
@@ -150,18 +162,28 @@ async function main() {
             if (e instanceof CancelToServerSelect) continue serverLoop;
             throw e;
           }
+        } else if (serverChoice === 'EDIT_SERVER') {
+          try {
+            await editServerFlow(config);
+            config = getConfig();
+            continue serverLoop;
+          } catch (e) {
+            if (e instanceof CancelToServerSelect) continue serverLoop;
+            throw e;
+          }
         } else if (serverChoice === 'DELETE_SERVER') {
           await deleteServerFlow(config);
           config = getConfig();
           continue serverLoop;
         } else {
           selectedServer = serverChoice;
-          if (config.lastServer !== selectedServer.name) {
-            config.lastServer = selectedServer.name;
-            await saveConfig(config);
-          }
         }
       }
+    }
+
+    if (selectedServer && config.lastServer !== selectedServer.name) {
+      config.lastServer = selectedServer.name;
+      await saveConfig(config);
     }
 
     // Action loop
@@ -183,7 +205,7 @@ async function main() {
         reused = true;
       }
       firstIteration = false;
-      const buildTool = reused ? null : detectBuildTool();
+      const buildTool = detectBuildTool();
       const isRunning = await isServerRunning(selectedServer!.home);
 
       if (reused) {
@@ -194,7 +216,8 @@ async function main() {
         const currentArtifacts = await findArtifacts(!!buildTool);
 
         const actionResult = await selectAction(
-          currentArtifacts.length === 0 ? ACTIONS.BUILD_DEPLOY : undefined,
+          preferredInitialAction
+            ?? (currentArtifacts.length === 0 ? ACTIONS.BUILD_DEPLOY : undefined),
           {
             canBuild: !!buildTool,
             canDeploy: currentArtifacts.length > 0,
@@ -204,6 +227,7 @@ async function main() {
 
         if (actionResult === NAV.BACK) continue serverLoop;
         action = actionResult;
+        preferredInitialAction = undefined;
         showServerOnlyArtifacts(currentArtifacts, selectedServer.home);
       } else {
         action = action!;
@@ -251,7 +275,7 @@ async function main() {
           await saveConfig(config);
 
           await startServer(selectedServer.home, mode === SERVER_MODES.DEBUG, port, selectedServer.memoryProfile);
-          log.success(`Server stopped ${log.dim(`(${selectedServer.name})`)}`);
+          log.success(`Server started ${log.dim(`(${selectedServer.name})`)}`);
         } catch (err) {
           log.error(`Failed to start server ${log.dim(`(${selectedServer.name})`)}`, err instanceof Error ? err.message : String(err));
         }
@@ -259,7 +283,7 @@ async function main() {
       }
 
       // Build + Deploy or Deploy Only
-      if (action === ACTIONS.BUILD_DEPLOY && !reused) {
+      if (action === ACTIONS.BUILD_DEPLOY) {
         if (!buildTool) {
           log.error('No build tool detected', 'This project does not contain build.gradle, build.gradle.kts or pom.xml at the root.');
           continue;
@@ -291,15 +315,22 @@ async function main() {
       }
 
       // Refresh/Select artifacts
-      if (!reused) {
+      if (!reused || action === ACTIONS.BUILD_DEPLOY) {
         const currentArtifacts = await findArtifacts(!!buildTool);
         if (currentArtifacts.length === 0) {
           log.warn('No artifacts found (.war or .ear). Make sure you have built the project.');
           continue;
         }
-        const artifactResult = await selectArtifact(currentArtifacts, lastDep?.artifactName);
-        if (artifactResult === NAV.BACK) continue;
-        artifact = artifactResult;
+
+        if (reused && artifact) {
+          artifact = currentArtifacts.find((currentArtifact) => currentArtifact.name === artifact!.name) || null;
+        }
+
+        if (!artifact) {
+          const artifactResult = await selectArtifact(currentArtifacts, lastDep?.artifactName);
+          if (artifactResult === NAV.BACK) continue;
+          artifact = artifactResult;
+        }
       }
 
       let deploySuccess = false;
@@ -365,7 +396,7 @@ async function main() {
           await saveConfig(config);
 
           await startServer(selectedServer.home, mode === SERVER_MODES.DEBUG, port, selectedServer.memoryProfile);
-          log.success(`Server stopped ${log.dim(`(${selectedServer.name})`)}`);
+          log.success(`Server started ${log.dim(`(${selectedServer.name})`)}`);
         } catch (err) {
           log.error(`Failed to start server ${log.dim(`(${selectedServer.name})`)}`, err instanceof Error ? err.message : String(err));
         }

@@ -1,8 +1,6 @@
 export const EXIT_CODES = {
   SUCCESS: 0,
-  GENERAL_ERROR: 1,
   USAGE_ERROR: 2,
-  COMMAND_NOT_FOUND: 127,
   INTERRUPTED: 130,
 } as const;
 
@@ -30,7 +28,6 @@ export const SERVER_SCRIPT = {
   BIN_DIR:  'bin',
   WIN:      'standalone.bat',
   UNIX:     'standalone.sh',
-  OS_FLAG:  '-Dos.name=Linux',
 } as const;
 
 export const ACTIONS = {

@@ -17,10 +17,11 @@ A **lightweight and fast** CLI tool to deploy EAR/WAR artifacts to **JBoss** or 
 *   **Fast Build**: Automatic project building — supports **Gradle** and **Maven** (auto-detects and uses `gradlew`/`mvnw` wrappers).
 *   **Smart Deployment**: Direct deployment to `standalone/deployments` with **real-time validation polling**.
 *   **Modern UI**: Interactive TUI with semantic logging.
-*   **Persistent Preferences**: Remembers your last server, debug port, JVM memory profile, and startup mode between sessions.
+*   **Persistent Preferences**: Remembers your last server, debug port, JVM memory profile, startup mode, and last deployment flow between sessions.
+*   **Smarter Defaults**: Recommends the most relevant artifact using your last deployment and recent build output.
 *   **Configurable Debug**: Choose your JVM debug port dynamically.
 *   **Dynamic JVM Memory**: Assign pre-configured JVM memory capacities independently for each server.
-*   **Seamless Workflow**: Automatic server startup after deployment and persistent loop-based interface to keep you in the flow.
+*   **Seamless Workflow**: Repeat the last project flow with one explicit action, edit saved servers quickly, and stay in a persistent loop-based interface.
 
 ## 📋 Requirements
 
@@ -31,7 +32,6 @@ A **lightweight and fast** CLI tool to deploy EAR/WAR artifacts to **JBoss** or 
 ## ⚙️ Installation
 
 ### Quick Start (No installation)
-Run the tool instantly using `npx`:
 ```bash
 npx jbdeploy
 ```
@@ -44,7 +44,6 @@ npm install -g jbdeploy
 ## 🛠️ Development
 
 ### Local Setup
-If you want to contribute or build the latest version from source:
 
 1. Clone the repository and install dependencies:
 ```bash
@@ -77,22 +76,23 @@ jbdeploy
 ```
 
 ### Workflow
-1. **Server Selection**: Choose a saved server or add a new one.
-2. **Action**: Choose between `Build, copy & start`, `Copy & start`, or `Start server` (when the server is already running, deploy variants are shown).
-3. **Build (if applicable)**: Gradle or Maven is auto-detected.
-4. **Server Mode**: If the server is stopped, choose **Normal** or **Debug** mode. Your last choice is remembered.
-5. **Auto-Start**: After a successful deployment with the server stopped, the CLI starts it automatically.
+1. **Project Entry**: When available, choose between `Repeat last flow` or continuing manually.
+2. **Server Selection**: Choose a saved server, add a new one, or edit an existing server quickly.
+3. **Action**: Choose between `Build, copy & start`, `Copy & start`, or `Start server` (when the server is already running, deploy variants are shown).
+4. **Artifact Selection**: If multiple artifacts are found, the CLI preselects the most relevant candidate and explains the recommendation.
+5. **Server Mode**: If the server is stopped, choose **Normal** or **Debug** mode. Your last choice is remembered.
+6. **Auto-Start**: After a successful deployment with the server stopped, the CLI starts it automatically.
 
 ## 📁 Configuration
 
-All preferences, registered JBoss servers, JVM memory profiles, and debug ports are saved locally at:
+All preferences, registered JBoss servers, JVM memory profiles, debug ports, and last project deployment flow are saved locally at:
 ```bash
 ~/.jbdeploy/config.json
 ```
 
 ---
 
-## �️ Show help
+## Help
 
 ```bash
 jbdeploy --help

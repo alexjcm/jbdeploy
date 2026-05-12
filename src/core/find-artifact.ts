@@ -6,6 +6,7 @@ export interface Artifact {
   path: string;
   name: string;
   size: number;
+  mtimeMs: number;
 }
 
 export function formatBytes(bytes: number, decimals = 2) {
@@ -48,6 +49,7 @@ export async function findArtifacts(includeSubprojects = true): Promise<Artifact
               path: filePath,
               name: file.name,
               size: stats.size,
+              mtimeMs: stats.mtimeMs,
             });
           }
         }
