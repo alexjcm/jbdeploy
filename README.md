@@ -62,6 +62,12 @@ Now you can use `jbdeploy` from any terminal.
 npm run dev
 ```
 
+4. Return to the published global package when you finish local testing:
+```bash
+npm unlink -g jbdeploy
+npm install -g jbdeploy
+```
+
 ## 🏗️ Build Pipeline
 
 - **Core**: Built with TypeScript for Node.js 20+.

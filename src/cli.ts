@@ -304,10 +304,6 @@ async function main() {
               },
             },
           ]);
-
-          const { notifySuccess } = await import('./utils/notify.ts');
-          notifySuccess('Build completed successfully!', '🛠️ Build Successful');
-
         } catch (err) {
           log.error('Action failed', err instanceof Error ? err.message : String(err));
           continue;
@@ -327,6 +323,11 @@ async function main() {
         }
 
         if (!artifact) {
+          if (currentArtifacts.length > 1) {
+            const { notifySuccess } = await import('./utils/notify.ts');
+            notifySuccess('Multiple artifacts detected. Please select one.', '📦 Artifact Selection');
+          }
+
           const artifactResult = await selectArtifact(currentArtifacts, lastDep?.artifactName);
           if (artifactResult === NAV.BACK) continue;
           artifact = artifactResult;

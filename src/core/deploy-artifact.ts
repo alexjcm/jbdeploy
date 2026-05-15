@@ -5,8 +5,8 @@ import { Artifact } from './find-artifact.ts';
 import { SERVER_PATHS, DEPLOYMENT_MARKERS } from '../constants.ts';
 
 function removeMarkers(base: string): void {
-  const { DEPLOYED, FAILED, ISDEPLOYING, SKIPDEPLOY, PENDING } = DEPLOYMENT_MARKERS;
-  for (const marker of [DEPLOYED, FAILED, ISDEPLOYING, SKIPDEPLOY, PENDING]) {
+  const { DODEPLOY, DEPLOYED, FAILED, ISDEPLOYING, SKIPDEPLOY, PENDING } = DEPLOYMENT_MARKERS;
+  for (const marker of [DODEPLOY, DEPLOYED, FAILED, ISDEPLOYING, SKIPDEPLOY, PENDING]) {
     rmSync(`${base}${marker}`, { force: true });
   }
 }
