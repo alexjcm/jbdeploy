@@ -12,6 +12,7 @@ export interface LastDeployment {
   serverName: string;
   action: DeployAction;
   artifactName: string;
+  artifactNames?: string[];
   mode: ServerMode;
   port?: number;
 }

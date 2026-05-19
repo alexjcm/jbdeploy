@@ -1,4 +1,4 @@
-import { group, text, select, confirm, isCancel, cancel, note } from '@clack/prompts';
+import { group, text, select, multiselect, confirm, isCancel, cancel, note } from '@clack/prompts';
 import { Config, AppServer, LastDeployment } from '../servers.ts';
 import { saveConfig, validateServerHome, normalizePath } from '../config/config-manager.ts';
 import { Artifact, formatBytes } from '../core/find-artifact.ts';
@@ -221,14 +221,8 @@ function getArtifactRecommendationHint(artifact: Artifact, lastArtifactName?: st
   return 'Recommended: most recently modified artifact found';
 }
 
-export async function selectArtifact(artifacts: Artifact[], lastArtifactName?: string): Promise<Artifact | typeof NAV.BACK> {
-  if (artifacts.length === 1) {
-    const artifact = artifacts[0]!;
-    note(`Artifact detected: ${artifact.name} (${formatBytes(artifact.size)})`);
-    return artifact;
-  }
-
-  const sorted = [...artifacts].sort((a, b) => {
+function sortArtifactsForRecommendation(artifacts: Artifact[], lastArtifactName?: string): Artifact[] {
+  return [...artifacts].sort((a, b) => {
     const aMatchesLast = a.name === lastArtifactName ? 1 : 0;
     const bMatchesLast = b.name === lastArtifactName ? 1 : 0;
 
@@ -244,6 +238,63 @@ export async function selectArtifact(artifacts: Artifact[], lastArtifactName?: s
 
     return a.name.localeCompare(b.name);
   });
+}
+
+export async function selectWarArtifacts(
+  warArtifacts: Artifact[],
+  lastArtifactNames: string[] = []
+): Promise<Artifact[] | typeof NAV.BACK> {
+  if (warArtifacts.length === 1) {
+    const artifact = warArtifacts[0]!;
+    note(`WAR artifact detected: ${artifact.name} (${formatBytes(artifact.size)})`);
+    return [artifact];
+  }
+
+  const lastArtifactLookup = new Set(lastArtifactNames);
+  const sorted = sortArtifactsForRecommendation(
+    warArtifacts,
+    lastArtifactNames.length > 0 ? lastArtifactNames[0] : undefined
+  );
+  const defaultArtifact = sorted[0]!;
+
+  const rememberedDefault = sorted.find((artifact) => lastArtifactLookup.has(artifact.name));
+  const selected = await multiselect({
+    message: `${warArtifacts.length} WAR artifacts found. Use Space to select and Enter to continue (Enter with no selection to go back):`,
+    options: [
+      ...sorted.map((artifact) => ({
+        value: artifact.path,
+        label: `${artifact.name} (${formatBytes(artifact.size)})`,
+        ...(artifact.path === defaultArtifact.path
+          ? { hint: getArtifactRecommendationHint(artifact, lastArtifactNames[0]) }
+          : {}),
+      })),
+    ],
+    required: false,
+    initialValues: [(rememberedDefault ?? defaultArtifact).path],
+  });
+
+  if (isCancel(selected)) {
+    cancel(UI_MESSAGES.GOODBYE);
+    process.exit(EXIT_CODES.INTERRUPTED);
+  }
+
+  const selectedPaths = selected as string[];
+  if (selectedPaths.length === 0) {
+    return NAV.BACK;
+  }
+
+  const selectedPathLookup = new Set(selectedPaths);
+  return sorted.filter((artifact) => selectedPathLookup.has(artifact.path));
+}
+
+export async function selectArtifact(artifacts: Artifact[], lastArtifactName?: string): Promise<Artifact | typeof NAV.BACK> {
+  if (artifacts.length === 1) {
+    const artifact = artifacts[0]!;
+    note(`Artifact detected: ${artifact.name} (${formatBytes(artifact.size)})`);
+    return artifact;
+  }
+
+  const sorted = sortArtifactsForRecommendation(artifacts, lastArtifactName);
   const defaultArtifact = sorted[0]!;
 
   const selected = await select({
@@ -331,7 +382,7 @@ export async function selectServerMode(
       message: 'Enter debug port:',
       placeholder: defaultPort.toString(),
       defaultValue: defaultPort.toString(),
-      validate: (value) => {
+      validate: (value: string | undefined) => {
         if (value && isNaN(Number(value))) return 'Port must be a number';
       },
     });
@@ -358,6 +409,9 @@ export async function selectProjectEntry(
   const modeLabel = last.mode === SERVER_MODES.DEBUG
     ? `Debug${last.port ? ` (${last.port})` : ''}`
     : 'Normal';
+  const artifactLabel = last.artifactNames && last.artifactNames.length > 0
+    ? last.artifactNames.join(', ')
+    : last.artifactName;
 
   const result = await select({
     message: 'How do you want to continue in this project?',
@@ -365,7 +419,7 @@ export async function selectProjectEntry(
       {
         value: 'REPEAT_LAST',
         label: '⚡ Repeat last flow',
-        hint: `[Server: ${last.serverName}, Action: ${actionLabel}, Artifact: ${last.artifactName}, Mode: ${modeLabel}]`
+        hint: `[Server: ${last.serverName}, Action: ${actionLabel}, Artifacts: ${artifactLabel}, Mode: ${modeLabel}]`
       } as const,
       { value: 'MANUAL_FLOW', label: 'Choose manually' } as const,
     ],

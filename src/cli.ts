@@ -4,7 +4,7 @@ import { log } from './ui/logger.ts';
 import { AppServer, LastDeployment } from './servers.ts';
 import { EXIT_CODES, ACTIONS, SERVER_MODES, NAV, DeployAction, ServerMode } from './constants.ts';
 import { getConfig, saveConfig } from './config/config-manager.ts';
-import { selectArtifact, selectAction, selectServerMode, selectServer, deleteServerFlow, editServerFlow, addNewServerFlow, selectProjectEntry, CancelToServerSelect, getActionLabel } from './ui/prompts.ts';
+import { selectArtifact, selectWarArtifacts, selectAction, selectServerMode, selectServer, deleteServerFlow, editServerFlow, addNewServerFlow, selectProjectEntry, CancelToServerSelect, getActionLabel } from './ui/prompts.ts';
 import { isServerRunning } from './server/detect-running.ts';
 import { cleanServerTemp } from './server/clean-temp.ts';
 import { listDeployedArtifacts } from './server/list-deployed-artifacts.ts';
@@ -12,6 +12,22 @@ import { startServer } from './server/start-server.ts';
 import { buildProject, detectBuildTool } from './core/build-project.ts';
 import { findArtifacts, Artifact } from './core/find-artifact.ts';
 import { deployArtifact } from './core/deploy-artifact.ts';
+
+function getLastArtifactNames(lastDep?: LastDeployment): string[] {
+  if (!lastDep) {
+    return [];
+  }
+
+  if (lastDep.artifactNames && lastDep.artifactNames.length > 0) {
+    return lastDep.artifactNames.filter((name) => name !== 'server-only');
+  }
+
+  if (lastDep.artifactName && lastDep.artifactName !== 'server-only') {
+    return [lastDep.artifactName];
+  }
+
+  return [];
+}
 
 function getCliVersion(): string {
   try {
@@ -97,7 +113,7 @@ async function main() {
     let selectedServer: AppServer | undefined;
     let initialReuse: {
       action: DeployAction,
-      artifact: Artifact | null,
+      artifacts: Artifact[],
       mode: ServerMode,
       port?: number
     } | null = null;
@@ -125,14 +141,18 @@ async function main() {
 
           const buildTool = detectBuildTool();
           const artifacts = await findArtifacts(!!buildTool);
-          const artifact = artifacts.find(a => a.name === lastDep.artifactName) || null;
+          const lastArtifactNames = getLastArtifactNames(lastDep);
+          const reusableArtifacts = artifacts.filter((artifact) => lastArtifactNames.includes(artifact.name));
 
-          if (!artifact && lastDep.action !== ACTIONS.START_ONLY) {
-            log.warn(`Artifact '${lastDep.artifactName}' not found. Falling back to manual artifact selection.`);
+          if (reusableArtifacts.length === 0 && lastDep.action !== ACTIONS.START_ONLY) {
+            const descriptor = lastArtifactNames.length > 0
+              ? `'${lastArtifactNames.join(', ')}'`
+              : `'${lastDep.artifactName}'`;
+            log.warn(`Artifact ${descriptor} not found. Falling back to manual artifact selection.`);
           } else {
             initialReuse = {
               action: lastDep.action,
-              artifact,
+              artifacts: reusableArtifacts,
               mode: lastDep.mode,
               ...(lastDep.port ? { port: lastDep.port } : {})
             };
@@ -165,7 +185,6 @@ async function main() {
         } else if (serverChoice === 'EDIT_SERVER') {
           try {
             await editServerFlow(config);
-            config = getConfig();
             continue serverLoop;
           } catch (e) {
             if (e instanceof CancelToServerSelect) continue serverLoop;
@@ -173,7 +192,6 @@ async function main() {
           }
         } else if (serverChoice === 'DELETE_SERVER') {
           await deleteServerFlow(config);
-          config = getConfig();
           continue serverLoop;
         } else {
           selectedServer = serverChoice;
@@ -191,7 +209,7 @@ async function main() {
 
     while (true) {
       let action: DeployAction;
-      let artifact: Artifact | null = null;
+      let artifactsToDeploy: Artifact[] = [];
       let mode: ServerMode | undefined;
       let port: number | undefined;
       let reused = false;
@@ -199,7 +217,7 @@ async function main() {
       // Reuse logic (only on first iteration)
       if (firstIteration && initialReuse) {
         action = initialReuse.action;
-        artifact = initialReuse.artifact;
+        artifactsToDeploy = initialReuse.artifacts;
         mode = initialReuse.mode;
         port = initialReuse.port;
         reused = true;
@@ -209,7 +227,10 @@ async function main() {
       const isRunning = await isServerRunning(selectedServer!.home);
 
       if (reused) {
-        log.info(`Reusing: ${getActionLabel(action!, { serverRunning: isRunning })} -> ${artifact?.name || 'server only'} on ${selectedServer!.name}`);
+        const reuseTarget = artifactsToDeploy.length > 0
+          ? artifactsToDeploy.map((artifact) => artifact.name).join(', ')
+          : 'server only';
+        log.info(`Reusing: ${getActionLabel(action!, { serverRunning: isRunning })} -> ${reuseTarget} on ${selectedServer!.name}`);
       }
 
       if (!reused) {
@@ -318,68 +339,124 @@ async function main() {
           continue;
         }
 
-        if (reused && artifact) {
-          artifact = currentArtifacts.find((currentArtifact) => currentArtifact.name === artifact!.name) || null;
+        if (reused && artifactsToDeploy.length > 0) {
+          const selectedNames = new Set(artifactsToDeploy.map((selectedArtifact) => selectedArtifact.name));
+          artifactsToDeploy = currentArtifacts.filter((currentArtifact) => selectedNames.has(currentArtifact.name));
         }
 
-        if (!artifact) {
-          if (currentArtifacts.length > 1) {
+        if (artifactsToDeploy.length === 0) {
+          const lastArtifactNames = getLastArtifactNames(lastDep);
+          const warArtifacts = currentArtifacts.filter((artifactCandidate) => artifactCandidate.name.toLowerCase().endsWith('.war'));
+
+          if (warArtifacts.length >= 2) {
             const { notifySuccess } = await import('./utils/notify.ts');
-            notifySuccess('Multiple artifacts detected. Please select one.', '📦 Artifact Selection');
-          }
+            notifySuccess('Multiple WAR artifacts detected. Select one or more.', '📦 Artifact Selection');
 
-          const artifactResult = await selectArtifact(currentArtifacts, lastDep?.artifactName);
-          if (artifactResult === NAV.BACK) continue;
-          artifact = artifactResult;
+            const warSelection = await selectWarArtifacts(warArtifacts, lastArtifactNames);
+            if (warSelection === NAV.BACK) continue;
+            artifactsToDeploy = warSelection;
+          } else {
+            if (currentArtifacts.length > 1) {
+              const { notifySuccess } = await import('./utils/notify.ts');
+              notifySuccess('Multiple artifacts detected. Please select one.', '📦 Artifact Selection');
+            }
+
+            const artifactResult = await selectArtifact(currentArtifacts, lastDep?.artifactName);
+            if (artifactResult === NAV.BACK) continue;
+            artifactsToDeploy = [artifactResult];
+          }
         }
       }
 
-      let deploySuccess = false;
-
-      try {
-        await tasks([
-          {
-            title: `Deploying ${artifact!.name}`,
-            task: async (taskLog) => {
-              if (!isRunning) {
-                taskLog('Cleaning temporary directories (data, log, tmp)');
-                cleanServerTemp(selectedServer.home);
-              }
-
-              deploySuccess = await deployArtifact(artifact!, selectedServer.home, isRunning);
-
-              if (!deploySuccess) {
-                throw new Error('Deployment failed (.failed marker or timeout)');
-              }
-
-              // Save successful deployment to project memory
-              if (!config.lastDeployments) config.lastDeployments = {};
-              const deploymentMode = mode || selectedServer.lastServerMode || SERVER_MODES.NORMAL;
-              config.lastDeployments[cwd] = {
-                serverName: selectedServer.name,
-                action: action === ACTIONS.BUILD_DEPLOY ? ACTIONS.BUILD_DEPLOY : ACTIONS.DEPLOY_ONLY,
-                artifactName: artifact!.name,
-                mode: deploymentMode,
-                ...(deploymentMode === SERVER_MODES.DEBUG && (port || selectedServer.lastDebugPort)
-                  ? { port: (port || selectedServer.lastDebugPort) }
-                  : {})
-              };
-              
-              // Explicitly sync the overall global state bypass tracking
-              config.lastServer = selectedServer.name;
-              await saveConfig(config);
-
-              return isRunning
-                ? 'Deployment validated (.deployed detected)'
-                : log.dim('Artifact transferred successfully (ready for boot)');
-            },
-          },
-        ]);
-      } catch (err) {
-        log.error('Deployment failed', err instanceof Error ? err.message : String(err));
+      if (artifactsToDeploy.length === 0) {
+        log.warn('No artifacts selected. Please select at least one artifact to continue.');
+        continue;
       }
 
-      if (deploySuccess && !isRunning) {
+      let deploymentsSucceeded = true;
+      let cleanedTempForOfflineDeploy = false;
+
+      if (artifactsToDeploy.length > 1) {
+        for (const artifact of artifactsToDeploy) {
+          try {
+            if (!isRunning && !cleanedTempForOfflineDeploy) {
+              cleanServerTemp(selectedServer.home);
+              cleanedTempForOfflineDeploy = true;
+            }
+
+            const deploySuccess = await deployArtifact(artifact, selectedServer.home, isRunning);
+            if (!deploySuccess) {
+              deploymentsSucceeded = false;
+              log.error(`Deployment failed for ${artifact.name}`, 'Deployment failed (.failed marker or timeout)');
+              break;
+            }
+          } catch (err) {
+            deploymentsSucceeded = false;
+            log.error(`Deployment failed for ${artifact.name}`, err instanceof Error ? err.message : String(err));
+            break;
+          }
+        }
+      } else {
+        const artifact = artifactsToDeploy[0]!;
+        let deploySuccess = false;
+
+        try {
+          await tasks([
+            {
+              title: `Deploying ${artifact.name}`,
+              task: async (taskLog: (message: string) => void) => {
+                if (!isRunning && !cleanedTempForOfflineDeploy) {
+                  taskLog('Cleaning temporary directories (data, log, tmp)');
+                  cleanServerTemp(selectedServer.home);
+                  cleanedTempForOfflineDeploy = true;
+                }
+
+                deploySuccess = await deployArtifact(artifact, selectedServer.home, isRunning);
+
+                if (!deploySuccess) {
+                  throw new Error('Deployment failed (.failed marker or timeout)');
+                }
+
+                return isRunning
+                  ? 'Deployment validated (.deployed detected)'
+                  : log.dim('Artifact transferred successfully (ready for boot)');
+              },
+            },
+          ]);
+        } catch (err) {
+          deploymentsSucceeded = false;
+          log.error(`Deployment failed for ${artifact.name}`, err instanceof Error ? err.message : String(err));
+        }
+      }
+
+      if (deploymentsSucceeded) {
+        if (artifactsToDeploy.length > 1) {
+          log.success(
+            isRunning
+              ? 'Artifacts deployed successfully (.deployed detected)'
+              : 'Artifacts transferred successfully (ready for boot)'
+          );
+        }
+
+        if (!config.lastDeployments) config.lastDeployments = {};
+        const deploymentMode = mode || selectedServer.lastServerMode || SERVER_MODES.NORMAL;
+        const selectedArtifactNames = artifactsToDeploy.map((artifact) => artifact.name);
+        config.lastDeployments[cwd] = {
+          serverName: selectedServer.name,
+          action: action === ACTIONS.BUILD_DEPLOY ? ACTIONS.BUILD_DEPLOY : ACTIONS.DEPLOY_ONLY,
+          artifactName: selectedArtifactNames[0]!,
+          ...(selectedArtifactNames.length > 1 ? { artifactNames: selectedArtifactNames } : {}),
+          mode: deploymentMode,
+          ...(deploymentMode === SERVER_MODES.DEBUG && (port || selectedServer.lastDebugPort)
+            ? { port: (port || selectedServer.lastDebugPort) }
+            : {})
+        };
+
+        config.lastServer = selectedServer.name;
+        await saveConfig(config);
+      }
+
+      if (deploymentsSucceeded && !isRunning) {
         if (!reused) {
           const modeResult = await selectServerMode(selectedServer.lastDebugPort, selectedServer.lastServerMode);
           if (modeResult === NAV.BACK) continue;
