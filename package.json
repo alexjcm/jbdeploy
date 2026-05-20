@@ -15,7 +15,7 @@
     "url": "https://github.com/alexjcm/jbdeploy/issues"
   },
   "homepage": "https://github.com/alexjcm/jbdeploy#readme",
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": ["dist", "README.md", "LICENSE", "CHANGELOG.md"],
   "engines": {
     "node": ">=20.0.0"
   },
