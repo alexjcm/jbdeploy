@@ -2,12 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.4.0] - 2026-05-10
+## [1.4.0] - 2026-05-20
+
+### Added
+- Added WAR-only multi-selection when 2 or more WAR artifacts are detected, allowing selection and confirmation in a single deploy execution.
+- Added an explicit `Repeat last flow` entry point for project-local reuse instead of relying on an implicit confirmation prompt.
+- Added quick editing for saved servers directly from the interactive server selection flow.
 
 ### Changed
-- Added an explicit `Repeat last flow` entry point for project-local reuse instead of relying on an implicit confirmation prompt.
 - Improved artifact selection by preselecting the most relevant candidate using the last deployed artifact and recent modification time.
-- Added quick editing for saved servers directly from the interactive server selection flow.
+- Improved WAR multi-selection defaults by preselecting all previously selected WAR artifacts when available, with fallback to one recommended artifact.
+- Extended repeat-flow memory to support multiple artifact names while remaining backward compatible with existing `artifactName` data.
 
 ## [1.3.0] - 2026-04-18
 

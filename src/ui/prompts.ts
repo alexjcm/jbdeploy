@@ -257,7 +257,9 @@ export async function selectWarArtifacts(
   );
   const defaultArtifact = sorted[0]!;
 
-  const rememberedDefault = sorted.find((artifact) => lastArtifactLookup.has(artifact.name));
+  const rememberedInitialValues = sorted
+    .filter((artifact) => lastArtifactLookup.has(artifact.name))
+    .map((artifact) => artifact.path);
   const selected = await multiselect({
     message: `${warArtifacts.length} WAR artifacts found. Use Space to select and Enter to continue (Enter with no selection to go back):`,
     options: [
@@ -270,7 +272,9 @@ export async function selectWarArtifacts(
       })),
     ],
     required: false,
-    initialValues: [(rememberedDefault ?? defaultArtifact).path],
+    initialValues: rememberedInitialValues.length > 0
+      ? rememberedInitialValues
+      : [defaultArtifact.path],
   });
 
   if (isCancel(selected)) {
