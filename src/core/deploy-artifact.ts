@@ -5,8 +5,7 @@ import { Artifact } from './find-artifact.ts';
 import { SERVER_PATHS, DEPLOYMENT_MARKERS } from '../constants.ts';
 
 function removeMarkers(base: string): void {
-  const { DODEPLOY, DEPLOYED, FAILED, ISDEPLOYING, SKIPDEPLOY, PENDING } = DEPLOYMENT_MARKERS;
-  for (const marker of [DODEPLOY, DEPLOYED, FAILED, ISDEPLOYING, SKIPDEPLOY, PENDING]) {
+  for (const marker of Object.values(DEPLOYMENT_MARKERS)) {
     rmSync(`${base}${marker}`, { force: true });
   }
 }
@@ -19,7 +18,7 @@ export async function deployArtifact(artifact: Artifact, serverHome: string, isR
     // Smart Cleanup: Remove previous versions of the same artifact
     const ext = extname(artifact.name);
     const baseWithoutExt = basename(artifact.name, ext);
-    
+
     // Pattern: everything before the first hyphen followed by a digit
     const versionMatch = /^(.+?)-\d/.exec(baseWithoutExt);
     const prefix = versionMatch ? versionMatch[1] : baseWithoutExt;
@@ -39,27 +38,26 @@ export async function deployArtifact(artifact: Artifact, serverHome: string, isR
     removeMarkers(destPath);
 
     await copyFile(artifact.path, destPath);
-    
+
     // The JBoss/Wildfly server will delete this .dodeploy marker and create either .deployed or .failed
     await writeFile(`${destPath}${DEPLOYMENT_MARKERS.DODEPLOY}`, '', 'utf-8');
-    
-    // If the server is offline, skip polling since JBoss isn't there to process the marker yet
+
     if (!isRunning) return true;
-    
+
     const deployedMarker = `${destPath}${DEPLOYMENT_MARKERS.DEPLOYED}`;
     const failedMarker = `${destPath}${DEPLOYMENT_MARKERS.FAILED}`;
-    
+
     let attempts = 0;
     const maxAttempts = 120; // 120 seconds timeout
-    
+
     while (attempts < maxAttempts) {
       if (existsSync(deployedMarker)) return true;
       if (existsSync(failedMarker)) return false;
-      
+
       await new Promise(r => setTimeout(r, 1000));
       attempts++;
     }
-    
+
     throw new Error(`Timeout (${maxAttempts}s): Server took too long to deploy.`);
   } catch (err) {
     if (err instanceof Error) throw err;

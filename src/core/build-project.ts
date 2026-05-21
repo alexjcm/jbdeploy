@@ -17,7 +17,8 @@ function getTargetCommand(tool: BuildTool): string {
   const fallbacks: Record<BuildTool, string> = { gradle: 'gradle', maven: 'mvn' };
   const wrapper = wrappers[tool];
   if (existsSync(wrapper)) {
-    if (!isWin) try { chmodSync(wrapper, 0o755); } catch { /* ignore */ }
+    // Best-effort permission fix: if chmod fails we fall back to the system PATH entry
+    if (!isWin) try { chmodSync(wrapper, 0o755); } catch { /* ignored intentionally */ }
     return wrapper;
   }
   return fallbacks[tool];
@@ -33,6 +34,8 @@ export function isMavenProject(): boolean {
 
 async function runBuild(cmd: string, args: string[]): Promise<boolean> {
   return new Promise((resolve) => {
+    // shell is only enabled on Windows so the OS can interpret .bat/.cmd wrappers.
+    // On Unix the script is spawned directly without a shell, avoiding injection risks.
     const proc = spawn(cmd, args, { stdio: 'inherit', shell: System.isWindows });
     proc.on('close', (code) => resolve(code === 0));
     proc.on('error', (err) => { console.error(`Build error: ${err.message}`); resolve(false); });

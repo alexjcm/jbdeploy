@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { writeFile } from 'fs/promises';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { homedir } from 'os';
 
 import { Config } from '../servers.ts';
@@ -30,13 +30,14 @@ export async function saveConfig(config: Config): Promise<void> {
 }
 
 /**
- * Cleans paths dragged into the terminal (strips quotes and unescapes spaces)
+ * Cleans paths dragged into the terminal, resolving them to absolute paths.
  */
 export function normalizePath(input: string): string {
-  return input
+  const cleaned = input
     .trim()
     .replace(/^['"]|['"]$/g, '') // Strip leading/trailing quotes
     .replace(/\\ /g, ' ');       // Unescape spaces (Unix/macOS)
+  return resolve(cleaned);
 }
 
 export function validateServerHome(home: string): boolean {

@@ -16,8 +16,6 @@ This repository contains a single TypeScript CLI package for deploying EAR/WAR a
 - `npm run build`: bundle the CLI into `dist/index.js` with `tsup`.
 - `npm run dev`: run the CLI in watch mode with `tsx`.
 - `npm run lint`: run ESLint over `src/`.
-- `npm run lint:fix`: apply safe lint fixes.
-- `npm pack --dry-run --cache /tmp/jbdeploy-npm-cache`: verify publish contents before npm release.
 
 There is currently no dedicated `npm test` script. At minimum, contributors should run `npm run build` and `npm run lint` before submitting changes.
 

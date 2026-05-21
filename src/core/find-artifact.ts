@@ -1,4 +1,4 @@
-import { statSync, readdirSync } from 'fs';
+import { stat, readdir } from 'fs/promises';
 import { join } from 'path';
 import { ARTIFACT_EXTENSIONS } from '../constants.ts';
 
@@ -23,16 +23,18 @@ export async function findArtifacts(includeSubprojects = true): Promise<Artifact
 
   if (includeSubprojects) {
     try {
-      const rootEntries = readdirSync('.', { withFileTypes: true });
+      const rootEntries = await readdir('.', { withFileTypes: true });
       for (const entry of rootEntries) {
         if (entry.isDirectory() && !entry.name.startsWith('.')) {
           dirsToCheck.push(entry.name);
         }
       }
     } catch {
-      // Ignore root read failure
+      // Intentionally ignored: root directory may be unreadable in restricted environments
     }
   }
+
+  const candidates: { filePath: string; fileName: string }[] = [];
 
   for (const dir of dirsToCheck) {
     const gradleDir = join(dir, 'build', 'libs');
@@ -40,23 +42,36 @@ export async function findArtifacts(includeSubprojects = true): Promise<Artifact
 
     for (const targetDir of [gradleDir, mavenDir]) {
       try {
-        const files = readdirSync(targetDir, { withFileTypes: true });
+        const files = await readdir(targetDir, { withFileTypes: true });
         for (const file of files) {
           if (file.isFile() && ARTIFACT_EXTENSIONS.some(ext => file.name.endsWith(ext))) {
             const filePath = join(targetDir, file.name).replace(/\\/g, '/');
-            const stats = statSync(filePath);
-            artifacts.push({
-              path: filePath,
-              name: file.name,
-              size: stats.size,
-              mtimeMs: stats.mtimeMs,
-            });
+            candidates.push({ filePath, fileName: file.name });
           }
         }
       } catch {
-        // Ignoring if the target folder does not exist
+        // Intentionally ignored: target directory may not exist for this subproject
       }
     }
+  }
+
+  const statPromises = candidates.map(async (c) => {
+    try {
+      const stats = await stat(c.filePath);
+      return {
+        path: c.filePath,
+        name: c.fileName,
+        size: stats.size,
+        mtimeMs: stats.mtimeMs,
+      };
+    } catch {
+      return null;
+    }
+  });
+
+  const resolved = await Promise.all(statPromises);
+  for (const item of resolved) {
+    if (item) artifacts.push(item);
   }
 
   // Deduplication based on path

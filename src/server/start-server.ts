@@ -4,21 +4,23 @@ import { existsSync, statSync, chmodSync } from 'fs';
 import { DEFAULT_DEBUG_PORT, SERVER_SCRIPT } from '../constants.ts';
 import { System } from '../core/system.ts';
 
+export type StartServerResult = 'stopped-by-user' | 'exited';
+
 function getMemoryArgs(profile?: 'minimal' | 'recommended'): string {
   if (profile === 'minimal') {
     return '-Xms1024m -Xmx2048m';
   }
-  return '-Xms2048m -Xmx5120m'; // Default to recommended
+  return '-Xms2048m -Xmx5120m';
 }
 
 const getDebugOpts = (port: number) => `-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=${port}`;
 
 export async function startServer(
-  serverHome: string, 
-  debug = false, 
+  serverHome: string,
+  debug = false,
   debugPort: number = DEFAULT_DEBUG_PORT,
   memoryProfile?: 'minimal' | 'recommended'
-): Promise<void> {
+): Promise<StartServerResult> {
   const memOpts = getMemoryArgs(memoryProfile);
   const BASE_OPTS = `-server ${memOpts} -XX:MetaspaceSize=512m -XX:MaxMetaspaceSize=2048m ` +
     '-Djava.net.preferIPv4Stack=true -Djboss.modules.system.pkgs=org.jboss.byteman ' +
@@ -47,11 +49,11 @@ export async function startServer(
 
   const javaOpts = debug ? `${BASE_OPTS} ${getDebugOpts(debugPort)}` : BASE_OPTS;
 
-  // NOTE: Certain artifacts require the OS to be identified as Linux due to their internal 
+  // NOTE: Certain artifacts require the OS to be identified as Linux due to their internal
   // configuration, even when running on macOS or other Unix-like systems.
   const args: string[] = isWin ? [] : ['-Dos.name=Linux'];
 
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<StartServerResult>((resolve, reject) => {
     let sigintReceived = false;
     const onSigInt = () => { sigintReceived = true; };
     process.on('SIGINT', onSigInt);
@@ -63,18 +65,29 @@ export async function startServer(
         ...process.env,
         JAVA_OPTS: javaOpts
       },
-      shell: isWin // Modern practice for `.bat` and script execution safely
+      shell: isWin
     });
 
     proc.on('close', (code, signal) => {
       process.off('SIGINT', onSigInt);
-      const intentional = sigintReceived || code === 0 || code === null || code === 130 || code === 143
+      const stoppedByUser = sigintReceived || code === 130 || code === 143
         || signal === 'SIGINT' || signal === 'SIGTERM';
-      if (intentional) resolve();
-      else reject(new Error(`Server process exited with code ${code}`));
+
+      if (stoppedByUser) {
+        resolve('stopped-by-user');
+        return;
+      }
+
+      if (code === 0) {
+        resolve('exited');
+        return;
+      }
+
+      reject(new Error(`Server process exited with code ${code}`));
     });
 
     proc.on('error', (err) => {
+      process.off('SIGINT', onSigInt);
       reject(err);
     });
   });

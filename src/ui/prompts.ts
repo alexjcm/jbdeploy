@@ -3,9 +3,16 @@ import { Config, AppServer, LastDeployment } from '../servers.ts';
 import { saveConfig, validateServerHome, normalizePath } from '../config/config-manager.ts';
 import { Artifact, formatBytes } from '../core/find-artifact.ts';
 import { EXIT_CODES, DEFAULT_DEBUG_PORT, ACTIONS, SERVER_MODES, NAV, UI_MESSAGES, ServerMode, DeployAction } from '../constants.ts';
+import { log } from './logger.ts';
 
 export class CancelToServerSelect extends Error {
   constructor() { super('User cancelled to server select'); }
+}
+
+export interface ActionSelection {
+  action: DeployAction;
+  mode: ServerMode;
+  port?: number;
 }
 
 async function promptServerDetails(
@@ -74,6 +81,14 @@ export function getActionLabel(
     case ACTIONS.START_ONLY:
       return 'Start server';
   }
+}
+
+function formatStartupModeLabel(mode: ServerMode, port?: number): string {
+  if (mode === SERVER_MODES.DEBUG) {
+    return `Startup mode: 🐞 Debug (${port || DEFAULT_DEBUG_PORT})`;
+  }
+
+  return 'Startup mode: 🚀 Normal';
 }
 
 export async function addNewServerFlow(existingConfig: Config): Promise<AppServer> {
@@ -261,7 +276,7 @@ export async function selectWarArtifacts(
     .filter((artifact) => lastArtifactLookup.has(artifact.name))
     .map((artifact) => artifact.path);
   const selected = await multiselect({
-    message: `${warArtifacts.length} WAR artifacts found. Use Space to select and Enter to continue (Enter with no selection to go back):`,
+    message: `${warArtifacts.length} WAR artifacts found. ${log.dim('Use Space to select and Enter to continue (Enter with no selection to go back)')}:`,
     options: [
       ...sorted.map((artifact) => ({
         value: artifact.path,
@@ -324,34 +339,69 @@ export async function selectArtifact(artifacts: Artifact[], lastArtifactName?: s
 
 export async function selectAction(
   initialValue?: DeployAction,
-  options: { canBuild: boolean; canDeploy: boolean; serverRunning?: boolean } = { canBuild: true, canDeploy: true }
-): Promise<DeployAction | typeof NAV.BACK> {
+  options: {
+    canBuild: boolean;
+    canDeploy: boolean;
+    serverRunning?: boolean;
+    lastServerMode?: ServerMode;
+    lastDebugPort?: number;
+  } = { canBuild: true, canDeploy: true }
+): Promise<ActionSelection | typeof NAV.BACK> {
   const serverRunning = options.serverRunning ?? false;
-  const menuOptions: { value: DeployAction | typeof NAV.BACK; label: string }[] = [
-    { value: ACTIONS.BUILD_DEPLOY, label: getActionLabel(ACTIONS.BUILD_DEPLOY, { serverRunning }) },
-    { value: ACTIONS.DEPLOY_ONLY, label: getActionLabel(ACTIONS.DEPLOY_ONLY, { serverRunning }) },
-    ...(serverRunning ? [] : [{ value: ACTIONS.START_ONLY, label: getActionLabel(ACTIONS.START_ONLY) }]),
-    { value: NAV.BACK, label: '← Back (change server)' },
-  ];
+  let currentMode = options.lastServerMode ?? SERVER_MODES.NORMAL;
+  let currentPort = options.lastDebugPort;
 
-  const filteredOptions = menuOptions.filter((opt) => {
-    if (opt.value === ACTIONS.BUILD_DEPLOY) return options.canBuild;
-    if (opt.value === ACTIONS.DEPLOY_ONLY) return options.canDeploy;
-    return true;
-  });
-
-  const action = await select({
-    message: 'Select action:',
-    options: filteredOptions,
-    ...(initialValue && filteredOptions.some((o) => o.value === initialValue) ? { initialValue } : {}),
-  });
-
-  if (isCancel(action)) {
-    cancel(UI_MESSAGES.GOODBYE);
-    process.exit(EXIT_CODES.INTERRUPTED);
+  if (currentMode === SERVER_MODES.DEBUG && !currentPort) {
+    currentPort = DEFAULT_DEBUG_PORT;
   }
 
-  return action as DeployAction | typeof NAV.BACK;
+  while (true) {
+    const menuOptions: { value: DeployAction | 'startup-mode' | typeof NAV.BACK; label: string }[] = [
+      { value: ACTIONS.BUILD_DEPLOY, label: getActionLabel(ACTIONS.BUILD_DEPLOY, { serverRunning }) },
+      { value: ACTIONS.DEPLOY_ONLY, label: getActionLabel(ACTIONS.DEPLOY_ONLY, { serverRunning }) },
+      ...(serverRunning ? [] : [{ value: ACTIONS.START_ONLY, label: getActionLabel(ACTIONS.START_ONLY) }]),
+      ...(serverRunning ? [] : [{ value: 'startup-mode' as const, label: formatStartupModeLabel(currentMode, currentPort) }]),
+      { value: NAV.BACK, label: '← Back (change server)' },
+    ];
+
+    const filteredOptions = menuOptions.filter((opt) => {
+      if (opt.value === ACTIONS.BUILD_DEPLOY) return options.canBuild;
+      if (opt.value === ACTIONS.DEPLOY_ONLY) return options.canDeploy;
+      return true;
+    });
+
+    const action = await select({
+      message: 'Select action:',
+      options: filteredOptions,
+      ...(initialValue && filteredOptions.some((option) => option.value === initialValue) ? { initialValue } : {}),
+    });
+
+    if (isCancel(action)) {
+      cancel(UI_MESSAGES.GOODBYE);
+      process.exit(EXIT_CODES.INTERRUPTED);
+    }
+
+    if (action === NAV.BACK) {
+      return NAV.BACK;
+    }
+
+    if (action === 'startup-mode') {
+      const modeResult = await selectServerMode(currentPort, currentMode);
+      if (modeResult === NAV.BACK) {
+        continue;
+      }
+
+      currentMode = modeResult.mode;
+      currentPort = modeResult.port;
+      continue;
+    }
+
+    return {
+      action: action as DeployAction,
+      mode: currentMode,
+      ...(currentMode === SERVER_MODES.DEBUG && currentPort ? { port: currentPort } : {}),
+    };
+  }
 }
 
 export async function selectServerMode(

@@ -42,21 +42,29 @@ function commandMatchesServerHome(commandLine: string, serverHome: string): bool
   return buildServerHomeMatchers(serverHome).some((matcher) => normalizedCommand.includes(matcher));
 }
 
-async function listUnixProcessCommands(): Promise<string[]> {
-  const { stdout } = await execAsync('ps -ax -o command=');
+function parseStdoutLines(stdout: string): string[] {
   return stdout
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean);
 }
 
+async function listUnixProcessCommands(): Promise<string[]> {
+  const { stdout } = await execAsync('ps -ax -o command=');
+  return parseStdoutLines(stdout);
+}
+
 async function listWindowsProcessCommands(): Promise<string[]> {
-  const command = 'powershell -NoProfile -Command "Get-CimInstance Win32_Process | Select-Object -ExpandProperty CommandLine"';
-  const { stdout } = await execAsync(command, { maxBuffer: 1024 * 1024 * 10 });
-  return stdout
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+  try {
+    // Fast path: wmic (takes ~200ms)
+    const { stdout } = await execAsync('wmic process get CommandLine');
+    return parseStdoutLines(stdout);
+  } catch {
+    // Fallback path: powershell (takes ~1.5s - 3s but extremely robust and guaranteed to be present)
+    const command = 'powershell -NoProfile -Command "Get-CimInstance Win32_Process | Select-Object -ExpandProperty CommandLine"';
+    const { stdout } = await execAsync(command, { maxBuffer: 1024 * 1024 * 10 });
+    return parseStdoutLines(stdout);
+  }
 }
 
 export async function isServerRunning(serverHome: string): Promise<boolean> {
