@@ -280,10 +280,21 @@ async function handleStartOnlyAction(
     }
 
     if (!config.lastDeployments) config.lastDeployments = {};
+    const previousDeployment = config.lastDeployments[cwd];
+    const previousArtifactNames = previousDeployment?.artifactNames?.filter((name) => name !== 'server-only') ?? [];
+    const preservedArtifacts = previousArtifactNames.length > 0
+      ? {
+          artifactName: previousArtifactNames[0]!,
+          artifactNames: previousArtifactNames,
+        }
+      : previousDeployment?.artifactName && previousDeployment.artifactName !== 'server-only'
+        ? { artifactName: previousDeployment.artifactName }
+        : { artifactName: 'server-only' };
+
     config.lastDeployments[cwd] = {
       serverName: selectedServer.name,
       action: ACTIONS.START_ONLY,
-      artifactName: 'server-only',
+      ...preservedArtifacts,
       mode: finalMode!,
       ...(finalMode === SERVER_MODES.DEBUG && (finalPort || selectedServer.lastDebugPort)
         ? { port: (finalPort || selectedServer.lastDebugPort) }
@@ -412,7 +423,7 @@ async function main() {
     } | null = null;
     let preferredInitialAction: DeployAction | undefined;
 
-    const lastDep: LastDeployment | undefined = config.lastDeployments?.[cwd];
+    let lastDep: LastDeployment | undefined = config.lastDeployments?.[cwd];
 
     // Only prompt for reuse on the very first CLI boot, not when returning via Back
     if (isFirstAppRun && lastDep) {
@@ -547,6 +558,7 @@ async function main() {
       // --- START_ONLY ---
       if (action === ACTIONS.START_ONLY) {
         await handleStartOnlyAction(selectedServer!, mode, port, isRunning, config, cwd);
+        lastDep = config.lastDeployments?.[cwd];
         continue;
       }
 
@@ -575,6 +587,7 @@ async function main() {
 
       if (deploymentsSucceeded) {
         await saveLastDeployment(config, cwd, selectedServer!, artifactsToDeploy, action, mode, port);
+        lastDep = config.lastDeployments?.[cwd];
       }
 
       // --- Auto-start server after offline deploy ---

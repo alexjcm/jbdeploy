@@ -2,7 +2,7 @@
   "name": "jbdeploy",
   "type": "module",
   "main": "./dist/index.js",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "CLI tool to deploy EAR/WAR artifacts to JBoss or Wildfly with automatic build detection.",
   "author": "Alex JCM",
   "license": "MIT",
