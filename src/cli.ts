@@ -403,7 +403,7 @@ async function main() {
   }
 
   const linkedInstallSuffix = isRunningFromNpmLink()
-    ? ` ${log.dim('(running from linked workspace)')}`
+    ? ` ${log.dim(`(v${getCliVersion()} running from linked workspace)`)}`
     : '';
 
   log.intro(`🚀 JB Deploy CLI${linkedInstallSuffix}`);
