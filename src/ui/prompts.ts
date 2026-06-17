@@ -22,7 +22,7 @@ async function promptServerDetails(
   const namePromptOptions = {
     message: 'Name for this server (e.g., wildfly-dev):',
     placeholder: currentServer?.name ?? 'server-local',
-    ...(currentServer?.name ? { defaultValue: currentServer.name } : {}),
+    ...(currentServer?.name ? { initialValue: currentServer.name } : {}),
     validate: (value: string | undefined) => {
       if (!value) return 'Name is required';
       if (existingConfig.servers.some((server) => server.name === value && server.name !== currentServer?.name)) {
@@ -33,7 +33,7 @@ async function promptServerDetails(
   const homePromptOptions = {
     message: 'Full path for Server Home:',
     placeholder: currentServer?.home ?? '/opt/wildfly-20.0',
-    ...(currentServer?.home ? { defaultValue: currentServer.home } : {}),
+    ...(currentServer?.home ? { initialValue: currentServer.home } : {}),
     validate: (value: string | undefined) => {
       if (!value) return 'Path is required';
       if (!validateServerHome(value)) return 'This path does not look like a valid Server Home (missing standalone/deployments)';
@@ -209,9 +209,9 @@ export async function selectServer(config: Config): Promise<AppServer | 'ADD_NEW
       value: s as AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER',
       label: `${s.name} (${s.home})`,
     })),
-    { value: 'ADD_NEW' as AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER', label: '➕ Add new server...' },
-    ...(config.servers.length > 0 ? [{ value: 'EDIT_SERVER' as AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER', label: '✏️  Edit saved server...' }] : []),
-    ...(config.servers.length > 0 ? [{ value: 'DELETE_SERVER' as AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER', label: '🗑️  Delete saved server...' }] : [])
+    { value: 'ADD_NEW' as AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER', label: 'Add new server...' },
+    ...(config.servers.length > 0 ? [{ value: 'EDIT_SERVER' as AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER', label: 'Edit saved server...' }] : []),
+    ...(config.servers.length > 0 ? [{ value: 'DELETE_SERVER' as AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER', label: 'Delete saved server...' }] : [])
   ] as { value: AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER'; label: string }[];
 
   const selected = await select({
@@ -472,7 +472,7 @@ export async function selectProjectEntry(
     options: [
       {
         value: 'REPEAT_LAST',
-        label: '⚡ Repeat last flow',
+        label: 'Repeat last flow',
         hint: `[Server: ${last.serverName}, Action: ${actionLabel}, Artifacts: ${artifactLabel}, Mode: ${modeLabel}]`
       } as const,
       { value: 'MANUAL_FLOW', label: 'Choose manually' } as const,
