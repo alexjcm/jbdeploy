@@ -5,17 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.4.2] - 2026-06-16
 
 ### Changed
 - Upgraded the artifact scanning engine to use asynchronous promise-based I/O instead of blocking synchronous operations.
 - Refined terminal UX by dimming instructional text on multiselect prompts and the offline transfer success notification.
 - Moved startup mode selection into the main action menu so the last used mode stays visible and can be reused without an extra prompt during start/deploy flows.
-- Parallelized metadata collection (`stat`) in the artifact scanner using `Promise.all` to accelerate search times in larger workspaces.
+- Parallelized metadata collection (`stat`) in the artifact scanner to accelerate search times in larger workspaces.
 - Resolved path relative inputs to their absolute forms to avoid running state detection failures.
 
 ### Fixed
 - Fixed incorrect `Server started` messaging after intentionally stopping the foreground server with `Ctrl+C`; the CLI now reports the process stop instead of a false startup success.
+
+## [Unreleased]
 
 ## [1.4.0] - 2026-05-20
 
