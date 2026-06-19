@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Added version-agnostic artifact matching to allow repeating the last flow even when the artifact version changes.
+
+
 ## [1.4.0] - 2026-05-20
 
 ### Added

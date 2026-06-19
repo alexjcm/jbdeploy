@@ -10,7 +10,7 @@ import { cleanServerTemp } from './server/clean-temp.ts';
 import { listDeployedArtifacts } from './server/list-deployed-artifacts.ts';
 import { startServer, type StartServerResult } from './server/start-server.ts';
 import { buildProject, detectBuildTool, BuildTool } from './core/build-project.ts';
-import { findArtifacts, Artifact } from './core/find-artifact.ts';
+import { findArtifacts, Artifact, getArtifactBaseName } from './core/find-artifact.ts';
 import { deployArtifact } from './core/deploy-artifact.ts';
 import { notifySuccess } from './utils/notify.ts';
 
@@ -122,8 +122,8 @@ async function resolveArtifactsToDeploy(
   // After a build with reuse, try to remap artifact names from the fresh build output
   let resolved: Artifact[] = [];
   if (reused && reusedArtifacts.length > 0) {
-    const selectedNames = new Set(reusedArtifacts.map((a) => a.name));
-    resolved = currentArtifacts.filter((a) => selectedNames.has(a.name));
+    const lastBases = reusedArtifacts.map((a) => getArtifactBaseName(a.name));
+    resolved = currentArtifacts.filter((a) => lastBases.includes(getArtifactBaseName(a.name)));
   }
 
   if (resolved.length === 0) {
@@ -427,7 +427,7 @@ async function main() {
 
     // Only prompt for reuse on the very first CLI boot, not when returning via Back
     if (isFirstAppRun && lastDep) {
-      const server = config.servers.find((s) => s.name === lastDep.serverName);
+      const server = config.servers.find((s) => s.name === lastDep!.serverName);
       const isRunningOnBoot = server ? await isServerRunning(server.home) : false;
       const entryChoice = await selectProjectEntry(lastDep, { serverRunning: isRunningOnBoot });
 
@@ -444,14 +444,38 @@ async function main() {
           const buildTool = detectBuildTool();
           const artifacts = await findArtifacts(!!buildTool);
           const lastArtifactNames = getLastArtifactNames(lastDep);
-          const reusableArtifacts = artifacts.filter((artifact) => lastArtifactNames.includes(artifact.name));
+          
+          const reusableArtifacts: Artifact[] = [];
+          const versionUpdates: string[] = [];
 
-          if (reusableArtifacts.length === 0 && lastDep.action !== ACTIONS.START_ONLY) {
+          for (const lastName of lastArtifactNames) {
+            const lastBase = getArtifactBaseName(lastName);
+            const candidates = artifacts.filter(
+              (artifact) => getArtifactBaseName(artifact.name) === lastBase
+            );
+
+            if (candidates.length > 0) {
+              candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+              const bestCandidate = candidates[0]!;
+              reusableArtifacts.push(bestCandidate);
+
+              if (bestCandidate.name !== lastName) {
+                versionUpdates.push(`'${lastName}' -> '${bestCandidate.name}'`);
+              }
+            }
+          }
+
+          const allFound = lastArtifactNames.length > 0 && reusableArtifacts.length === lastArtifactNames.length;
+
+          if (!allFound && lastDep.action !== ACTIONS.START_ONLY) {
             const descriptor = lastArtifactNames.length > 0
               ? `'${lastArtifactNames.join(', ')}'`
               : `'${lastDep.artifactName}'`;
             log.warn(`Artifact ${descriptor} not found. Falling back to manual artifact selection.`);
           } else {
+            if (versionUpdates.length > 0) {
+              log.info(`Artifact versions updated: ${versionUpdates.join(', ')}`);
+            }
             initialReuse = {
               action: lastDep.action,
               artifacts: reusableArtifacts,

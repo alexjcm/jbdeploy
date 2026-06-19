@@ -1,7 +1,7 @@
 import { group, text, select, multiselect, confirm, isCancel, cancel, note } from '@clack/prompts';
 import { Config, AppServer, LastDeployment } from '../servers.ts';
 import { saveConfig, validateServerHome, normalizePath } from '../config/config-manager.ts';
-import { Artifact, formatBytes } from '../core/find-artifact.ts';
+import { Artifact, formatBytes, getArtifactBaseName } from '../core/find-artifact.ts';
 import { EXIT_CODES, DEFAULT_DEBUG_PORT, ACTIONS, SERVER_MODES, NAV, UI_MESSAGES, ServerMode, DeployAction } from '../constants.ts';
 import { log } from './logger.ts';
 
@@ -229,7 +229,7 @@ export async function selectServer(config: Config): Promise<AppServer | 'ADD_NEW
 }
 
 function getArtifactRecommendationHint(artifact: Artifact, lastArtifactName?: string): string {
-  if (artifact.name === lastArtifactName) {
+  if (lastArtifactName && getArtifactBaseName(artifact.name) === getArtifactBaseName(lastArtifactName)) {
     return 'Recommended: last artifact deployed in this project';
   }
 
@@ -237,9 +237,10 @@ function getArtifactRecommendationHint(artifact: Artifact, lastArtifactName?: st
 }
 
 function sortArtifactsForRecommendation(artifacts: Artifact[], lastArtifactName?: string): Artifact[] {
+  const lastBase = lastArtifactName ? getArtifactBaseName(lastArtifactName) : undefined;
   return [...artifacts].sort((a, b) => {
-    const aMatchesLast = a.name === lastArtifactName ? 1 : 0;
-    const bMatchesLast = b.name === lastArtifactName ? 1 : 0;
+    const aMatchesLast = lastBase && getArtifactBaseName(a.name) === lastBase ? 1 : 0;
+    const bMatchesLast = lastBase && getArtifactBaseName(b.name) === lastBase ? 1 : 0;
 
     if (aMatchesLast !== bMatchesLast) {
       return bMatchesLast - aMatchesLast;

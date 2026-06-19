@@ -17,6 +17,11 @@ export function formatBytes(bytes: number, decimals = 2) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
+export function getArtifactBaseName(name: string): string {
+  return name.replace(/-[0-9].*$/, '');
+}
+
+
 export async function findArtifacts(includeSubprojects = true): Promise<Artifact[]> {
   const artifacts: Artifact[] = [];
   const dirsToCheck = ['.'];
