@@ -138,14 +138,10 @@ async function resolveArtifactsToDeploy(
     const warArtifacts = currentArtifacts.filter((a) => a.name.toLowerCase().endsWith('.war'));
 
     if (warArtifacts.length >= 2) {
-      notifySuccess('Multiple WAR artifacts detected. Select one or more.', '📦 Artifact Selection');
       const warSelection = await selectWarArtifacts(warArtifacts, lastArtifactNames);
       if (warSelection === NAV.BACK) return 'continue';
       resolved = warSelection;
     } else {
-      if (currentArtifacts.length > 1) {
-        notifySuccess('Multiple artifacts detected. Please select one.', '📦 Artifact Selection');
-      }
       const artifactResult = await selectArtifact(currentArtifacts, lastDep?.artifactName);
       if (artifactResult === NAV.BACK) return 'continue';
       resolved = [artifactResult];
@@ -200,7 +196,6 @@ async function executeDeployments(
         ? `Deployment completed successfully for ${deploymentLabel}.`
         : `Artifacts transferred successfully for ${deploymentLabel}.`,
       '✅ Deployment Successful',
-      { playSound: true },
     );
     return true;
   }
@@ -243,7 +238,6 @@ async function executeDeployments(
       ? `Deployment completed successfully for ${artifact.name}.`
       : `Artifact transferred successfully for ${artifact.name}.`,
     '✅ Deployment Successful',
-    { playSound: true },
   );
   return true;
 }
