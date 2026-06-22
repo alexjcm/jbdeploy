@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Added version-agnostic artifact matching to allow repeating the last flow even when the artifact version changes.
+
+### Changed
+- Added native macOS success/error sounds for build and deploy outcomes, using distinct notification sounds when those actions complete or fail.
+
 ## [1.4.2] - 2026-06-16
 
 ### Changed
@@ -16,12 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Fixed incorrect `Server started` messaging after intentionally stopping the foreground server with `Ctrl+C`; the CLI now reports the process stop instead of a false startup success.
-
-## [Unreleased]
-
-### Added
-- Added version-agnostic artifact matching to allow repeating the last flow even when the artifact version changes.
-
 
 ## [1.4.0] - 2026-05-20
 

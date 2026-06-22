@@ -1,4 +1,4 @@
-import { tasks } from '@clack/prompts';
+import { spinner } from '@clack/prompts';
 import { existsSync, readFileSync } from 'fs';
 import { log } from './ui/logger.ts';
 import { AppServer, Config, LastDeployment } from './servers.ts';
@@ -12,7 +12,7 @@ import { startServer, type StartServerResult } from './server/start-server.ts';
 import { buildProject, detectBuildTool, BuildTool } from './core/build-project.ts';
 import { findArtifacts, Artifact, getArtifactBaseName } from './core/find-artifact.ts';
 import { deployArtifact } from './core/deploy-artifact.ts';
-import { notifySuccess } from './utils/notify.ts';
+import { notifyError, notifySuccess } from './utils/notify.ts';
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -79,18 +79,25 @@ async function executeBuildStep(buildTool: BuildTool): Promise<boolean> {
   const buildTitle = buildTool === 'gradle'
     ? 'Building project (gradle clean build)'
     : 'Building project (mvn clean package)';
+  const buildLabel = buildTool === 'gradle' ? 'Gradle build' : 'Maven build';
+  const buildSpinner = spinner();
 
   try {
-    await tasks([{
-      title: buildTitle,
-      task: async () => {
-        const success = await buildProject(buildTool);
-        if (!success) throw new Error('Build failed');
-        return 'Build successful';
-      },
-    }]);
+    buildSpinner.start(buildTitle);
+    const success = await buildProject(buildTool);
+    if (!success) {
+      buildSpinner.error('Build failed');
+      notifyError(`${buildLabel} failed. Review the build output for details.`, '❌ Build Failed', { playSound: true, showVisual: false });
+      log.error('Action failed', 'Build failed');
+      return false;
+    }
+
+    buildSpinner.stop('Build successful');
+    notifySuccess(`${buildLabel} completed successfully.`, '✅ Build Successful', { playSound: true });
     return true;
   } catch (err) {
+    buildSpinner.error('Build failed');
+    notifyError(`${buildLabel} failed. Review the build output for details.`, '❌ Build Failed', { playSound: true, showVisual: false });
     log.error('Action failed', err instanceof Error ? err.message : String(err));
     return false;
   }
@@ -159,6 +166,10 @@ async function executeDeployments(
   isRunning: boolean,
 ): Promise<boolean> {
   let cleanedTempForOfflineDeploy = false;
+  const artifactCount = artifactsToDeploy.length;
+  const deploymentLabel = artifactCount === 1
+    ? artifactsToDeploy[0]!.name
+    : `${artifactCount} artifacts`;
 
   if (artifactsToDeploy.length > 1) {
     for (const artifact of artifactsToDeploy) {
@@ -169,10 +180,12 @@ async function executeDeployments(
         }
         const deploySuccess = await deployArtifact(artifact, selectedServer.home, isRunning);
         if (!deploySuccess) {
+          notifyError(`Deployment failed for ${artifact.name}.`, '❌ Deployment Failed', { playSound: true });
           log.error(`Deployment failed for ${artifact.name}`, 'Deployment failed (.failed marker or timeout)');
           return false;
         }
       } catch (err) {
+        notifyError(`Deployment failed for ${artifact.name}.`, '❌ Deployment Failed', { playSound: true });
         log.error(`Deployment failed for ${artifact.name}`, err instanceof Error ? err.message : String(err));
         return false;
       }
@@ -182,35 +195,57 @@ async function executeDeployments(
         ? 'Artifacts deployed successfully (.deployed detected)'
         : 'Artifacts transferred successfully (ready for boot)',
     );
+    notifySuccess(
+      isRunning
+        ? `Deployment completed successfully for ${deploymentLabel}.`
+        : `Artifacts transferred successfully for ${deploymentLabel}.`,
+      '✅ Deployment Successful',
+      { playSound: true },
+    );
     return true;
   }
 
   // Single artifact — show progress inside a Clack tasks block
   const artifact = artifactsToDeploy[0]!;
-  let deploySuccess = false;
+  const deploySpinner = spinner();
 
   try {
-    await tasks([{
-      title: `Deploying ${artifact.name}`,
-      task: async (taskLog: (message: string) => void) => {
-        if (!isRunning && !cleanedTempForOfflineDeploy) {
-          taskLog('Cleaning temporary directories (data, log, tmp)');
-          cleanServerTemp(selectedServer.home);
-          cleanedTempForOfflineDeploy = true;
-        }
-        deploySuccess = await deployArtifact(artifact, selectedServer.home, isRunning);
-        if (!deploySuccess) throw new Error('Deployment failed (.failed marker or timeout)');
-        return isRunning
-          ? 'Deployment validated (.deployed detected)'
-          : log.dim('Artifact transferred successfully (ready for boot)');
-      },
-    }]);
+    deploySpinner.start(`Deploying ${artifact.name}`);
+    if (!isRunning && !cleanedTempForOfflineDeploy) {
+      deploySpinner.message('Cleaning temporary directories (data, log, tmp)');
+      cleanServerTemp(selectedServer.home);
+      cleanedTempForOfflineDeploy = true;
+      deploySpinner.message(`Deploying ${artifact.name}`);
+    }
+
+    const deploySuccess = await deployArtifact(artifact, selectedServer.home, isRunning);
+    if (!deploySuccess) {
+      deploySpinner.error('Deployment failed (.failed marker or timeout)');
+      notifyError(`Deployment failed for ${artifact.name}.`, '❌ Deployment Failed', { playSound: true });
+      log.error(`Deployment failed for ${artifact.name}`, 'Deployment failed (.failed marker or timeout)');
+      return false;
+    }
+
+    deploySpinner.stop(
+      isRunning
+        ? 'Deployment validated (.deployed detected)'
+        : 'Artifact transferred successfully (ready for boot)',
+    );
   } catch (err) {
+    deploySpinner.error('Deployment failed');
+    notifyError(`Deployment failed for ${artifact.name}.`, '❌ Deployment Failed', { playSound: true });
     log.error(`Deployment failed for ${artifact.name}`, err instanceof Error ? err.message : String(err));
     return false;
   }
 
-  return deploySuccess;
+  notifySuccess(
+    isRunning
+      ? `Deployment completed successfully for ${artifact.name}.`
+      : `Artifact transferred successfully for ${artifact.name}.`,
+    '✅ Deployment Successful',
+    { playSound: true },
+  );
+  return true;
 }
 
 /**
