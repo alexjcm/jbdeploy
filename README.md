@@ -81,13 +81,17 @@ Run the CLI from any project you want to deploy:
 jbdeploy
 ```
 
-To pass a system property to the server (equivalent to `./standalone.sh -Ddomain=...`), add it when launching the CLI:
+### Passing system properties to the server
+
+Add `-Dkey=value` when launching the CLI. It is the same as running `./standalone.sh -Dkey=value` by hand:
 
 ```bash
 jbdeploy -Ddomain=https://example.com
+jbdeploy -Ddomain=https://example.com -Dfoo=bar   # several properties
 ```
 
-These `-Dkey=value` arguments apply only to that run: they are not saved, and the next run without them starts the server with no extra arguments.
+- Applies to every server start during that session (after a deploy or with `Start server`).
+- Not saved: the next `jbdeploy` without the argument starts the server with no extra properties. `Repeat last flow` does not remember it either.
 
 ### Workflow
 1. **Project Entry**: When available, choose between `Repeat last flow` or continuing manually.
