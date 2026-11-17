@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-16
+
 ### Added
 - Added version-agnostic artifact matching to allow repeating the last flow even when the artifact version changes.
 - Added support for passing `-Dkey=value` system properties to the server at launch (e.g. `jbdeploy -Ddomain=https://example.com`). They apply to that run only and are never saved; invalid values and `-Djava.security.manager` are rejected.
