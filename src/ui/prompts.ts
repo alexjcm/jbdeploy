@@ -1,7 +1,5 @@
-import { group, text, confirm, isCancel, cancel, note, S_BAR, S_BAR_END, S_CHECKBOX_ACTIVE, S_CHECKBOX_INACTIVE, S_CHECKBOX_SELECTED, S_RADIO_ACTIVE, S_RADIO_INACTIVE, symbol, symbolBar } from '@clack/prompts';
-import { MultiSelectPrompt, SelectPrompt, settings as clackSettings, wrapTextWithPrefix } from '@clack/core';
+import { group, text, confirm, isCancel, cancel, note, select, multiselect } from '@clack/prompts';
 import { styleText } from 'node:util';
-import type { Readable, Writable } from 'node:stream';
 import { Config, AppServer, LastDeployment } from '../servers.ts';
 import { saveConfig, validateServerHome, normalizePath } from '../config/config-manager.ts';
 import { Artifact, formatBytes, getArtifactBaseName } from '../core/find-artifact.ts';
@@ -16,200 +14,6 @@ export interface ActionSelection {
   action: DeployAction;
   mode: ServerMode;
   port?: number;
-}
-
-type SelectOption<T> = {
-  value: T;
-  label?: string;
-  hint?: string;
-  disabled?: boolean;
-};
-
-type SelectMenuOptions<T> = {
-  message: string;
-  options: SelectOption<T>[];
-  initialValue?: T;
-  input?: Readable;
-  output?: Writable;
-  signal?: AbortSignal;
-  withGuide?: boolean;
-};
-
-type MultiSelectMenuOptions<T> = {
-  message: string;
-  options: SelectOption<T>[];
-  initialValues?: T[];
-  required?: boolean;
-  cursorAt?: T;
-  input?: Readable;
-  output?: Writable;
-  signal?: AbortSignal;
-  withGuide?: boolean;
-};
-
-function formatSelectOption<T>(option: SelectOption<T>, state: 'active' | 'inactive' | 'disabled' | 'selected' | 'cancelled'): string {
-  const label = option.label ?? String(option.value);
-
-  switch (state) {
-    case 'disabled':
-      return `${styleText('gray', S_RADIO_INACTIVE)} ${styleText('gray', label)}${option.hint ? ` ${styleText('dim', `(${option.hint ?? 'disabled'})`)}` : ''}`;
-    case 'selected':
-      return styleText('dim', label);
-    case 'active':
-      return `${styleText('green', S_RADIO_ACTIVE)} ${label}${option.hint ? ` ${styleText('dim', `(${option.hint})`)}` : ''}`;
-    case 'cancelled':
-      return styleText(['strikethrough', 'dim'], label);
-    default:
-      return `${styleText('dim', S_RADIO_INACTIVE)} ${styleText('dim', label)}`;
-  }
-}
-
-async function selectMenu<T>(opts: SelectMenuOptions<T>): Promise<T | symbol> {
-  const promptOptions: ConstructorParameters<typeof SelectPrompt<SelectOption<T>>>[0] = {
-    options: opts.options,
-    render() {
-      const withGuide = opts.withGuide ?? clackSettings.withGuide;
-      const activePrefix = withGuide ? `${styleText('cyan', S_BAR)}  ` : '';
-      const header = wrapTextWithPrefix(
-        opts.output,
-        opts.message,
-        `${symbolBar(this.state)}  `,
-        `${symbol(this.state)}  `,
-      );
-      const frame = `${withGuide ? `${styleText('gray', S_BAR)}\n` : ''}${header}\n`;
-
-      switch (this.state) {
-        case 'submit': {
-          const prefix = withGuide ? `${styleText('gray', S_BAR)}  ` : '';
-          const selected = formatSelectOption(this.options[this.cursor]!, 'selected');
-          return `${frame}${wrapTextWithPrefix(opts.output, selected, prefix)}`;
-        }
-        case 'cancel': {
-          const prefix = withGuide ? `${styleText('gray', S_BAR)}  ` : '';
-          const cancelled = formatSelectOption(this.options[this.cursor]!, 'cancelled');
-          return `${frame}${wrapTextWithPrefix(opts.output, cancelled, prefix)}${withGuide ? `\n${styleText('gray', S_BAR)}` : ''}`;
-        }
-        default: {
-          const rows = this.options.map((option, index) =>
-            `${activePrefix}${formatSelectOption(option, option.disabled ? 'disabled' : index === this.cursor ? 'active' : 'inactive')}`
-          );
-          return `${frame}${rows.join('\n')}${withGuide ? `\n${styleText('cyan', S_BAR_END)}` : ''}\n`;
-        }
-      }
-    },
-  };
-
-  if (opts.signal) promptOptions.signal = opts.signal;
-  if (opts.input) promptOptions.input = opts.input;
-  if (opts.output) promptOptions.output = opts.output;
-  if (opts.initialValue !== undefined) promptOptions.initialValue = opts.initialValue;
-
-  return await new SelectPrompt<SelectOption<T>>(promptOptions).prompt() as T | symbol;
-}
-
-function mapMultiline(text: string, formatter: (line: string) => string): string {
-  return text.split('\n').map((line) => formatter(line)).join('\n');
-}
-
-function formatMultiSelectOption<T>(
-  option: SelectOption<T>,
-  state: 'disabled' | 'active' | 'selected' | 'cancelled' | 'active-selected' | 'submitted' | 'inactive'
-): string {
-  const label = option.label ?? String(option.value);
-
-  switch (state) {
-    case 'disabled':
-      return `${styleText('gray', S_CHECKBOX_INACTIVE)} ${mapMultiline(label, (line) => styleText(['strikethrough', 'gray'], line))}${option.hint ? ` ${styleText('dim', `(${option.hint ?? 'disabled'})`)}` : ''}`;
-    case 'active':
-      return `${styleText('cyan', S_CHECKBOX_ACTIVE)} ${label}${option.hint ? ` ${styleText('dim', `(${option.hint})`)}` : ''}`;
-    case 'selected':
-      return `${styleText('green', S_CHECKBOX_SELECTED)} ${mapMultiline(label, (line) => styleText('dim', line))}${option.hint ? ` ${styleText('dim', `(${option.hint})`)}` : ''}`;
-    case 'cancelled':
-      return mapMultiline(label, (line) => styleText(['strikethrough', 'dim'], line));
-    case 'active-selected':
-      return `${styleText('green', S_CHECKBOX_SELECTED)} ${label}${option.hint ? ` ${styleText('dim', `(${option.hint})`)}` : ''}`;
-    case 'submitted':
-      return mapMultiline(label, (line) => styleText('dim', line));
-    default:
-      return `${styleText('dim', S_CHECKBOX_INACTIVE)} ${mapMultiline(label, (line) => styleText('dim', line))}`;
-  }
-}
-
-async function multiselectMenu<T>(opts: MultiSelectMenuOptions<T>): Promise<T[] | symbol> {
-  const required = opts.required ?? true;
-
-  const promptOptions: ConstructorParameters<typeof MultiSelectPrompt<SelectOption<T>>>[0] = {
-    options: opts.options,
-    required,
-    validate(value) {
-      if (required && (value === undefined || value.length === 0)) {
-        return 'Please select at least one option.';
-      }
-    },
-    render() {
-      const withGuide = opts.withGuide ?? clackSettings.withGuide;
-      const header = wrapTextWithPrefix(
-        opts.output,
-        opts.message,
-        withGuide ? `${symbolBar(this.state)}  ` : '',
-        `${symbol(this.state)}  `,
-      );
-      const frame = `${withGuide ? `${styleText('gray', S_BAR)}\n` : ''}${header}\n`;
-      const selectedValues = this.value ?? [];
-      const formatRow = (option: SelectOption<T>, isActive: boolean) => {
-        if (option.disabled) return formatMultiSelectOption(option, 'disabled');
-        const isSelected = selectedValues.includes(option.value);
-        return isActive && isSelected
-          ? formatMultiSelectOption(option, 'active-selected')
-          : isSelected
-            ? formatMultiSelectOption(option, 'selected')
-            : formatMultiSelectOption(option, isActive ? 'active' : 'inactive');
-      };
-
-      switch (this.state) {
-        case 'submit': {
-          const selected = this.options
-            .filter(({ value }) => selectedValues.includes(value))
-            .map((option) => formatMultiSelectOption(option, 'submitted'))
-            .join(styleText('dim', ', ')) || styleText('dim', 'none');
-          return `${frame}${wrapTextWithPrefix(opts.output, selected, withGuide ? `${styleText('gray', S_BAR)}  ` : '')}`;
-        }
-        case 'cancel': {
-          const selected = this.options
-            .filter(({ value }) => selectedValues.includes(value))
-            .map((option) => formatMultiSelectOption(option, 'cancelled'))
-            .join(styleText('dim', ', '));
-          if (selected.trim() === '') {
-            return `${frame}${styleText('gray', S_BAR)}`;
-          }
-          return `${frame}${wrapTextWithPrefix(opts.output, selected, withGuide ? `${styleText('gray', S_BAR)}  ` : '')}${withGuide ? `\n${styleText('gray', S_BAR)}` : ''}`;
-        }
-        case 'error': {
-          const prefix = withGuide ? `${styleText('yellow', S_BAR)}  ` : '';
-          const errorLines = this.error.split('\n').map((line, index) =>
-            index === 0
-              ? `${withGuide ? `${styleText('yellow', S_BAR_END)}  ` : ''}${styleText('yellow', line)}`
-              : `   ${line}`
-          ).join('\n');
-          const rows = this.options.map((option, index) => `${prefix}${formatRow(option, index === this.cursor)}`);
-          return `${frame}${rows.join('\n')}\n${errorLines}\n`;
-        }
-        default: {
-          const prefix = withGuide ? `${styleText('cyan', S_BAR)}  ` : '';
-          const rows = this.options.map((option, index) => `${prefix}${formatRow(option, index === this.cursor)}`);
-          return `${frame}${rows.join('\n')}${withGuide ? `\n${styleText('cyan', S_BAR_END)}` : ''}\n`;
-        }
-      }
-    },
-  };
-
-  if (opts.signal) promptOptions.signal = opts.signal;
-  if (opts.input) promptOptions.input = opts.input;
-  if (opts.output) promptOptions.output = opts.output;
-  if (opts.initialValues !== undefined) promptOptions.initialValues = opts.initialValues;
-  if (opts.cursorAt !== undefined) promptOptions.cursorAt = opts.cursorAt;
-
-  return await new MultiSelectPrompt<SelectOption<T>>(promptOptions).prompt() as T[] | symbol;
 }
 
 async function promptServerDetails(
@@ -241,7 +45,8 @@ async function promptServerDetails(
     {
       name: () => text(namePromptOptions),
       home: () => text(homePromptOptions),
-      profile: () => selectMenu({
+      profile: () => select({
+        showInstructions: false,
         message: 'Select the JVM memory profile for this server (affects -Xms and -Xmx):',
         options: [
           { value: 'recommended', label: '[ Recommended ] 2GB initial - 5GB max (Default)' },
@@ -310,7 +115,8 @@ export async function addNewServerFlow(existingConfig: Config): Promise<AppServe
 }
 
 export async function editServerFlow(config: Config): Promise<void> {
-  const serverToEdit = await selectMenu({
+  const serverToEdit = await select({
+    showInstructions: false,
     message: 'Select a server to edit:',
     options: [
       ...config.servers.map((server) => ({
@@ -355,7 +161,8 @@ export async function editServerFlow(config: Config): Promise<void> {
 }
 
 export async function deleteServerFlow(config: Config): Promise<void> {
-  const serverToDelete = await selectMenu({
+  const serverToDelete = await select({
+    showInstructions: false,
     message: 'Select a server to delete:',
     options: [
       ...config.servers.map(s => ({
@@ -411,7 +218,8 @@ export async function selectServer(config: Config): Promise<AppServer | 'ADD_NEW
     ...(config.servers.length > 0 ? [{ value: 'DELETE_SERVER' as AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER', label: 'Delete saved server...' }] : [])
   ] as { value: AppServer | 'ADD_NEW' | 'EDIT_SERVER' | 'DELETE_SERVER'; label: string }[];
 
-  const selected = await selectMenu({
+  const selected = await select({
+    showInstructions: false,
     message: 'Select server:',
     options,
     initialValue: config.servers.find(s => s.name === config.lastServer) || config.servers[0],
@@ -453,34 +261,57 @@ function sortArtifactsForRecommendation(artifacts: Artifact[], lastArtifactName?
   });
 }
 
-export async function selectWarArtifacts(
-  warArtifacts: Artifact[],
+/**
+ * Orders artifacts for the multi-selection menu:
+ * previously deployed ones first (matched by base name), then EAR before WAR, then larger size first.
+ */
+function sortArtifactsForMultiSelect(artifacts: Artifact[], lastArtifactNames: string[]): Artifact[] {
+  const lastBases = new Set(lastArtifactNames.map((name) => getArtifactBaseName(name)));
+  const isPreviouslyDeployed = (artifact: Artifact) => lastBases.has(getArtifactBaseName(artifact.name));
+  const isEar = (artifact: Artifact) => artifact.name.toLowerCase().endsWith('.ear');
+
+  return [...artifacts].sort((a, b) => {
+    const aPrev = isPreviouslyDeployed(a) ? 1 : 0;
+    const bPrev = isPreviouslyDeployed(b) ? 1 : 0;
+    if (aPrev !== bPrev) return bPrev - aPrev;
+
+    const aEar = isEar(a) ? 1 : 0;
+    const bEar = isEar(b) ? 1 : 0;
+    if (aEar !== bEar) return bEar - aEar;
+
+    if (a.size !== b.size) return b.size - a.size;
+
+    return a.name.localeCompare(b.name);
+  });
+}
+
+export async function selectArtifacts(
+  artifacts: Artifact[],
   lastArtifactNames: string[] = []
 ): Promise<Artifact[] | typeof NAV.BACK> {
-  if (warArtifacts.length === 1) {
-    const artifact = warArtifacts[0]!;
-    note(`WAR artifact detected: ${artifact.name} (${formatBytes(artifact.size)})`);
+  if (artifacts.length === 1) {
+    const artifact = artifacts[0]!;
+    note(`Artifact detected: ${artifact.name} (${formatBytes(artifact.size)})`);
     return [artifact];
   }
 
   const lastArtifactLookup = new Set(lastArtifactNames);
-  const sorted = sortArtifactsForRecommendation(
-    warArtifacts,
-    lastArtifactNames.length > 0 ? lastArtifactNames[0] : undefined
-  );
+  const sorted = sortArtifactsForMultiSelect(artifacts, lastArtifactNames);
   const defaultArtifact = sorted[0]!;
+  const lastBases = new Set(lastArtifactNames.map((name) => getArtifactBaseName(name)));
 
   const rememberedInitialValues = sorted
     .filter((artifact) => lastArtifactLookup.has(artifact.name))
     .map((artifact) => artifact.path);
-  const selected = await multiselectMenu({
-    message: `${warArtifacts.length} WAR artifacts found. ${log.dim('Use Space to select and Enter to continue (Enter with no selection to go back)')}:`,
+  const selected = await multiselect({
+    showInstructions: false,
+    message: `${artifacts.length} artifacts found. ${log.dim('Use Space to select and Enter to continue (Enter with no selection to go back)')}:`,
     options: [
       ...sorted.map((artifact) => ({
         value: artifact.path,
         label: `${artifact.name} (${formatBytes(artifact.size)})`,
-        ...(artifact.path === defaultArtifact.path
-          ? { hint: getArtifactRecommendationHint(artifact, lastArtifactNames[0]) }
+        ...(artifact.path === defaultArtifact.path && lastBases.has(getArtifactBaseName(artifact.name))
+          ? { hint: 'Recommended: last artifact deployed in this project' }
           : {}),
       })),
     ],
@@ -514,7 +345,8 @@ export async function selectArtifact(artifacts: Artifact[], lastArtifactName?: s
   const sorted = sortArtifactsForRecommendation(artifacts, lastArtifactName);
   const defaultArtifact = sorted[0]!;
 
-  const selected = await selectMenu({
+  const selected = await select({
+    showInstructions: false,
     message: `${artifacts.length} artifacts found. Select one:`,
     options: [
       ...sorted.map(a => ({
@@ -568,7 +400,8 @@ export async function selectAction(
       return true;
     });
 
-    const action = await selectMenu({
+    const action = await select({
+      showInstructions: false,
       message: 'Select action:',
       options: filteredOptions,
       ...(initialValue && filteredOptions.some((option) => option.value === initialValue) ? { initialValue } : {}),
@@ -611,7 +444,8 @@ export async function selectServerMode(
     ? `🐞 Debug mode (Port: ${lastUsedPort})`
     : `🐞 Debug mode (Default port: ${DEFAULT_DEBUG_PORT})`;
 
-  const modeResult = await selectMenu({
+  const modeResult = await select({
+    showInstructions: false,
     message: 'Select startup mode:',
     options: [
       { value: SERVER_MODES.NORMAL, label: '🚀 Normal mode' },

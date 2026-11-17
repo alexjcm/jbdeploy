@@ -19,7 +19,8 @@ export async function startServer(
   serverHome: string,
   debug = false,
   debugPort: number = DEFAULT_DEBUG_PORT,
-  memoryProfile?: 'minimal' | 'recommended'
+  memoryProfile?: 'minimal' | 'recommended',
+  extraArgs: string[] = []
 ): Promise<StartServerResult> {
   const memOpts = getMemoryArgs(memoryProfile);
   const BASE_OPTS = `-server ${memOpts} -XX:MetaspaceSize=512m -XX:MaxMetaspaceSize=2048m ` +
@@ -51,7 +52,7 @@ export async function startServer(
 
   // NOTE: Certain artifacts require the OS to be identified as Linux due to their internal
   // configuration, even when running on macOS or other Unix-like systems.
-  const args: string[] = isWin ? [] : ['-Dos.name=Linux'];
+  const args: string[] = [...(isWin ? [] : ['-Dos.name=Linux']), ...extraArgs];
 
   return new Promise<StartServerResult>((resolve, reject) => {
     let sigintReceived = false;

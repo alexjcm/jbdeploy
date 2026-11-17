@@ -9,9 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added version-agnostic artifact matching to allow repeating the last flow even when the artifact version changes.
+- Added support for passing `-Dkey=value` system properties to the server at launch (e.g. `jbdeploy -Ddomain=https://example.com`). They apply to that run only and are never saved; invalid values and `-Djava.security.manager` are rejected.
 
 ### Changed
 - Added native macOS success/error sounds for build and deploy outcomes, using distinct notification sounds when those actions complete or fail.
+- Replaced the custom select/multi-select components with the native ones from `@clack/prompts` 1.9, keeping the same look, and upgraded `@clack/prompts` to `^1.9.0`.
+- The multi-selection menu (shown when 2+ WARs are detected) now lists EAR and WAR artifacts, ordered by previously deployed first, then EAR before WAR, then larger size.
+
+### Fixed
+- Fixed EAR artifacts being hidden from artifact selection whenever 2 or more WAR artifacts were present in the build output.
+- Fixed long single-selection menus (such as the artifact list) corrupting the terminal output when they were taller than the terminal; select and multi-select menus now scroll within the visible area.
 
 ## [1.4.2] - 2026-06-16
 

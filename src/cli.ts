@@ -4,7 +4,7 @@ import { log } from './ui/logger.ts';
 import { AppServer, Config, LastDeployment } from './servers.ts';
 import { EXIT_CODES, ACTIONS, SERVER_MODES, NAV, DeployAction, ServerMode } from './constants.ts';
 import { getConfig, saveConfig } from './config/config-manager.ts';
-import { selectArtifact, selectWarArtifacts, selectAction, selectServer, deleteServerFlow, editServerFlow, addNewServerFlow, selectProjectEntry, CancelToServerSelect, getActionLabel } from './ui/prompts.ts';
+import { selectArtifact, selectArtifacts, selectAction, selectServer, deleteServerFlow, editServerFlow, addNewServerFlow, selectProjectEntry, CancelToServerSelect, getActionLabel } from './ui/prompts.ts';
 import { isServerRunning } from './server/detect-running.ts';
 import { cleanServerTemp } from './server/clean-temp.ts';
 import { listDeployedArtifacts } from './server/list-deployed-artifacts.ts';
@@ -13,6 +13,7 @@ import { buildProject, detectBuildTool, BuildTool } from './core/build-project.t
 import { findArtifacts, Artifact, getArtifactBaseName } from './core/find-artifact.ts';
 import { deployArtifact } from './core/deploy-artifact.ts';
 import { notifyError, notifySuccess } from './utils/notify.ts';
+import { parseSystemProperties } from './utils/system-properties.ts';
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -56,6 +57,11 @@ function showServerOnlyArtifacts(localArtifacts: Artifact[], serverHome: string)
   if (artifactsOnlyOnServer.length === 0) return;
 
   log.message(log.dim(`Artifacts currently on server: ${artifactsOnlyOnServer.join(', ')}`));
+}
+
+function logExtraServerArgs(extraArgs: string[]): void {
+  if (extraArgs.length === 0) return;
+  log.message(log.dim(`Extra server args: ${extraArgs.join(' ')}`));
 }
 
 function logServerProcessResult(selectedServer: AppServer, result: StartServerResult): void {
@@ -135,12 +141,13 @@ async function resolveArtifactsToDeploy(
 
   if (resolved.length === 0) {
     const lastArtifactNames = getLastArtifactNames(lastDep);
-    const warArtifacts = currentArtifacts.filter((a) => a.name.toLowerCase().endsWith('.war'));
+    const warCount = currentArtifacts.filter((a) => a.name.toLowerCase().endsWith('.war')).length;
 
-    if (warArtifacts.length >= 2) {
-      const warSelection = await selectWarArtifacts(warArtifacts, lastArtifactNames);
-      if (warSelection === NAV.BACK) return 'continue';
-      resolved = warSelection;
+    // Multi-selection is triggered by 2+ WARs, but lists every artifact (EAR and WAR)
+    if (warCount >= 2) {
+      const multiSelection = await selectArtifacts(currentArtifacts, lastArtifactNames);
+      if (multiSelection === NAV.BACK) return 'continue';
+      resolved = multiSelection;
     } else {
       const artifactResult = await selectArtifact(currentArtifacts, lastDep?.artifactName);
       if (artifactResult === NAV.BACK) return 'continue';
@@ -286,6 +293,7 @@ async function handleStartOnlyAction(
   isRunning: boolean,
   config: Config,
   cwd: string,
+  extraArgs: string[],
 ): Promise<void> {
   if (isRunning) {
     log.warn('Server is already running. It may be active in another terminal tab or window.');
@@ -301,6 +309,7 @@ async function handleStartOnlyAction(
   log.step('Server stopped — cleaning temporary directories (data, log, tmp)');
   cleanServerTemp(selectedServer.home);
   log.step(`Starting server in ${finalMode} mode${finalMode === SERVER_MODES.DEBUG ? ` (port ${finalPort})` : ''}...`);
+  logExtraServerArgs(extraArgs);
 
   try {
     selectedServer.lastServerMode = finalMode!;
@@ -338,6 +347,7 @@ async function handleStartOnlyAction(
       finalMode === SERVER_MODES.DEBUG,
       finalPort,
       selectedServer.memoryProfile,
+      extraArgs,
     );
     logServerProcessResult(selectedServer, result);
   } catch (err) {
@@ -355,6 +365,7 @@ async function startServerAfterDeploy(
   mode: ServerMode | undefined,
   port: number | undefined,
   config: Config,
+  extraArgs: string[],
 ): Promise<void> {
   const finalMode = mode ?? selectedServer.lastServerMode ?? SERVER_MODES.NORMAL;
   const finalPort = finalMode === SERVER_MODES.DEBUG
@@ -362,6 +373,7 @@ async function startServerAfterDeploy(
     : undefined;
 
   log.step(`Starting server in ${finalMode} mode${finalMode === SERVER_MODES.DEBUG ? ` (port ${finalPort})` : ''}...`);
+  logExtraServerArgs(extraArgs);
 
   try {
     selectedServer.lastServerMode = finalMode!;
@@ -375,6 +387,7 @@ async function startServerAfterDeploy(
       finalMode === SERVER_MODES.DEBUG,
       finalPort,
       selectedServer.memoryProfile,
+      extraArgs,
     );
     logServerProcessResult(selectedServer, result);
   } catch (err) {
@@ -408,7 +421,9 @@ async function main() {
     process.stdout.write('\n');
     log.info('Options:');
     process.stdout.write('    --help, -h       Show this help message\n');
-    process.stdout.write('    --version, -v    Show current version\n\n');
+    process.stdout.write('    --version, -v    Show current version\n');
+    process.stdout.write('    -Dkey=value      Pass a system property to the server for this run only (not saved)\n');
+    process.stdout.write('                     e.g. jbdeploy -Ddomain=https://example.com\n\n');
 
     log.info('Configuration:');
     process.stdout.write('    • Stored locally at ~/.jbdeploy/config.json\n');
@@ -424,6 +439,12 @@ async function main() {
     process.stdout.write('    • Auto-start server after successful build/deployment if stopped.\n');
     process.stdout.write('    • Loop-based workflow to stay in the CLI after actions.\n\n');
     process.exit(EXIT_CODES.SUCCESS);
+  }
+
+  const { properties: extraServerArgs, errors: extraArgErrors } = parseSystemProperties(args);
+  if (extraArgErrors.length > 0) {
+    for (const message of extraArgErrors) log.error(message);
+    process.exit(EXIT_CODES.USAGE_ERROR);
   }
 
   if (!process.stdout.isTTY) {
@@ -610,7 +631,7 @@ async function main() {
 
       // --- START_ONLY ---
       if (action === ACTIONS.START_ONLY) {
-        await handleStartOnlyAction(selectedServer!, mode, port, isRunning, config, cwd);
+        await handleStartOnlyAction(selectedServer!, mode, port, isRunning, config, cwd, extraServerArgs);
         lastDep = config.lastDeployments?.[cwd];
         continue;
       }
@@ -645,7 +666,7 @@ async function main() {
 
       // --- Auto-start server after offline deploy ---
       if (deploymentsSucceeded && !isRunning) {
-        await startServerAfterDeploy(selectedServer!, mode, port, config);
+        await startServerAfterDeploy(selectedServer!, mode, port, config, extraServerArgs);
       }
     }
   }
